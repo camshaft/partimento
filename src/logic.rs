@@ -491,6 +491,18 @@ mod tests {
             parse("!(A | B)").unwrap(),
             Formula::Or(vec![a("A"), a("B")]).not()
         );
+        assert_eq!(
+            parse("A <-> B <-> C").unwrap(),
+            a("A").iff(a("B")).iff(a("C"))
+        );
+        assert_eq!(
+            parse("A & B & C").unwrap(),
+            Formula::And(vec![a("A"), a("B"), a("C")])
+        );
+        assert_eq!(
+            parse("A | B | C").unwrap(),
+            Formula::Or(vec![a("A"), a("B"), a("C")])
+        );
     }
 
     #[test]
@@ -532,6 +544,19 @@ mod tests {
         ] {
             let error = parse(text).unwrap_err();
             assert_eq!(error.offset, offset, "{text:?}: {error}");
+        }
+
+        // These texts stop after `!` or inside a call's arguments, or close a parenthesis that
+        // wasn't opened; each error says what the parser expected at its offset.
+        for (text, offset, message) in [
+            ("A)", 1, "expected an operator or the formula's end"),
+            ("!", 1, "expected an identifier, `!` or `(`"),
+            ("at_least_one(A,", 15, "expected an identifier, `!` or `(`"),
+            ("at_least_one(A", 14, "expected `,` or `)`"),
+        ] {
+            let error = parse(text).unwrap_err();
+            assert_eq!(error.offset, offset, "{text:?}: {error}");
+            assert_eq!(error.message, message, "{text:?}");
         }
     }
 
