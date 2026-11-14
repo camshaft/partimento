@@ -9,6 +9,10 @@ use std::collections::BTreeMap;
 pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
+// The library's `render` and the drift rule of `check` call it once the model reads sections.
+#[cfg_attr(not(test), allow(dead_code))]
+mod render;
+
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
