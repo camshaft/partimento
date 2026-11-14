@@ -8,6 +8,8 @@
 //! before it, and the check reads the file again where a cache returns bytes that don't decode to
 //! a whole load, so a damaged entry doesn't change a report.
 
+#[cfg(test)]
+mod build_identity;
 mod sha256;
 
 use toml::Value;
@@ -501,6 +503,39 @@ table = { key = "value", nested = { list = [] } }
     fn the_build_identity_is_a_sha256_in_hex() {
         assert_eq!(BUILD.len(), 64);
         assert!(BUILD.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
+    fn build_file(path: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+        (path.to_string(), bytes.to_vec())
+    }
+
+    #[test]
+    fn each_file_of_a_build_changes_its_identity() {
+        let lib = build_file("src/lib.rs", b"mod a;\n");
+        let lock = build_file("Cargo.lock", b"toml 0.8.0\n");
+        let identity = build_identity::identity(&[lib.clone(), lock.clone()]);
+        let changed = [
+            vec![build_file("src/lib.rs", b"mod b;\n"), lock.clone()],
+            vec![build_file("src/main.rs", b"mod a;\n"), lock.clone()],
+            vec![lib.clone(), build_file("Cargo.lock", b"toml 0.9.0\n")],
+            vec![build_file("src/lib.r", b"smod a;\n"), lock],
+            vec![lib],
+        ];
+        for files in &changed {
+            assert_ne!(build_identity::identity(files), identity, "{files:?}");
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn the_build_identity_is_the_identity_of_the_package_files() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let files = build_identity::package_files(root).expect("the package's files read");
+        let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+        assert!(paths.contains(&"src/artifact/sha256.rs"), "{paths:?}");
+        assert_eq!(paths.last(), Some(&"Cargo.lock"));
+        assert!(paths[..paths.len() - 1].is_sorted(), "{paths:?}");
+        assert_eq!(build_identity::identity(&files), BUILD);
     }
 
     #[test]
