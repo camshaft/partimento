@@ -242,7 +242,9 @@ fn check(tree: &Tree, options: &Options, cache: Option<&Path>) -> Result<Report,
         return Ok(partimento::check_default(tree, options));
     };
     let cache = DiskCache::open(dir)?;
-    Ok(partimento::check_cached::<Backend, _>(tree, options, &cache))
+    Ok(partimento::check_cached::<Backend, _>(
+        tree, options, &cache,
+    ))
 }
 
 /// A cache on disk: a directory that holds each artifact in a file named by its key in hex.
