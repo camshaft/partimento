@@ -309,6 +309,49 @@ fn a_valid_set_renders_its_texts_and_requirement_files_alone() {
     assert_eq!(partimento::render(&full), Ok(generated));
 }
 
+/// Fixture 01-valid-set with spec.toml's `paths.rendered` set to `out/text` and
+/// `paths.requirements` to `out/req`, and its generated files moved there: each requirement
+/// file's `target` holds its text's path under `out/text`.
+fn valid_set_under_other_paths() -> Tree {
+    let mut moved = Tree::default();
+    for &(path, text) in named("01-valid-set").files {
+        let mut path = path.to_string();
+        let mut text = text.to_string();
+        if path == config::FILE {
+            text = text.replace("\"rendered\"", "\"out/text\"");
+            text = text.replace("\".duvet/requirements\"", "\"out/req\"");
+        } else if let Some(rest) = path.strip_prefix("rendered/") {
+            path = format!("out/text/{rest}");
+        } else if let Some(rest) = path.strip_prefix(".duvet/requirements/") {
+            path = format!("out/req/{rest}");
+            text = text.replace("target = \"rendered/", "target = \"out/text/");
+        }
+        moved.files.insert(path, ByteVec::from(text));
+    }
+    moved
+}
+
+#[test]
+fn a_set_renders_and_checks_under_the_generated_paths_its_spec_toml_sets() {
+    let full = valid_set_under_other_paths();
+    let loaded = config::load(&full, &mut Vec::new());
+    let paths = loaded.expect("spec.toml loads").paths;
+    assert_eq!(paths.rendered, "out/text");
+    assert_eq!(paths.requirements, "out/req");
+    let (sources, generated) = split(&full);
+    // The three texts and the four requirement files, each under a path spec.toml sets.
+    assert_eq!(generated.files.len(), 7);
+    let moved = |path: &String| path.starts_with("out/text/") || path.starts_with("out/req/");
+    assert!(generated.files.keys().all(moved));
+    // Each `target` the render writes holds the path of its text under `out/text`, as the moved
+    // files do, so a render that reads a generated path from anywhere but spec.toml fails here.
+    assert_eq!(partimento::render(&sources), Ok(generated.clone()));
+    assert_eq!(partimento::render(&full), Ok(generated));
+    let report = partimento::check_default(&full, &Options::default());
+    assert!(report.findings.is_empty(), "{}", lines(&report));
+    assert!(!report.failed());
+}
+
 #[test]
 fn a_render_ends_the_drift_of_a_hand_edit() {
     let fixture = named("11-hand-edit");
@@ -681,6 +724,58 @@ mod binary {
         let output = run(&["check", "--root", root]);
         assert_eq!(String::from_utf8_lossy(&output.stdout), "");
         assert_eq!(output.status.code(), Some(0));
+    }
+
+    /// `render` exits with 2, and prints the file's path on stderr, where it can't write the
+    /// hand-edited text of fixture 11-hand-edit: a file of mode 444, and the same file, removed,
+    /// in a directory of mode 555, where the render has to create it again.
+    #[cfg(unix)]
+    #[test]
+    fn render_exits_with_2_where_it_cant_write_a_file() {
+        use std::fs::{OpenOptions, Permissions};
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = scratch("render-unwritable");
+        write_tree(&dir, &tree(named("11-hand-edit")));
+        let root = dir.to_str().expect("the path is UTF-8");
+        let file = dir.join("rendered/0001-greetings/01-greeting.md");
+        let file_path = file.to_str().expect("the path is UTF-8");
+        let edited = std::fs::read(&file).expect("the file is read");
+        let set_mode = |target: &Path, bits: u32| {
+            let permissions = Permissions::from_mode(bits);
+            std::fs::set_permissions(target, permissions).expect("the mode is set");
+        };
+        let refused = |output: &Output| {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(2), "{stderr}");
+            assert!(output.stdout.is_empty(), "{stderr}");
+            let holds_the_path = stderr.lines().any(|line| line.contains(file_path));
+            assert!(holds_the_path, "{stderr}");
+        };
+
+        set_mode(&file, 0o444);
+        // A process that writes every file, such as one run as root, can't see the refusal.
+        let writable = OpenOptions::new().write(true).open(&file).is_ok();
+        let output = run(&["render", "--root", root]);
+        set_mode(&file, 0o644);
+        if writable {
+            // In CI, where the environment sets `CI`, the test has to reach the assertions below.
+            let message = "the test process writes a file of mode 444";
+            assert!(std::env::var_os("CI").is_none(), "{message}");
+            return;
+        }
+        refused(&output);
+        assert_eq!(std::fs::read(&file).expect("the file is read"), edited);
+
+        // A directory of mode 555 doesn't stop a write over a file in it, which only the file's
+        // mode stops, but it stops the render from creating the file there.
+        std::fs::remove_file(&file).expect("the file is removed");
+        let parent = file.parent().expect("the file is in a directory");
+        set_mode(parent, 0o555);
+        let output = run(&["render", "--root", root]);
+        set_mode(parent, 0o755);
+        refused(&output);
+        assert!(!file.exists());
     }
 
     /// Runs `check` on `dir`, and asserts that it exits with 2, prints nothing on stdout, and
