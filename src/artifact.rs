@@ -529,7 +529,10 @@ table = { key = "value", nested = { list = [] } }
             ],
             vec![
                 lib.clone(),
-                build_file("Cargo.toml", b"features = [\"parse\", \"preserve_order\"]\n"),
+                build_file(
+                    "Cargo.toml",
+                    b"features = [\"parse\", \"preserve_order\"]\n",
+                ),
                 lock.clone(),
             ],
             vec![
