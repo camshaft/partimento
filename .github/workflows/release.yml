@@ -9,7 +9,8 @@ name: release
 #
 # The static Linux programs for x86_64 and aarch64, and their SHA-256 sums, attach to that release:
 #   - `plan` reads Cargo.toml's version, and asks for the programs where the tag v<version> doesn't
-#     exist yet (this run may release it) or where its release lacks an archive or its sum.
+#     exist yet and this push is the merge of the release pull request, the one push that can
+#     create the tag, or where the tag's release lacks an archive or its sum.
 #   - `binaries` builds them from that commit with the read-only token.
 #   - `release` attaches each missing file to the release v<version> once the tag exists, and
 #     creates the release where the tag has none, so a release published in an earlier run without
@@ -61,11 +62,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Read Cargo.toml's version, and decide whether this run builds the programs and from which
-  # commit: this commit where the tag v<version> doesn't exist yet, or the tag's commit where its
-  # release lacks an archive or its sum.
+  # commit: this commit where the tag v<version> doesn't exist yet and this push is the merge of
+  # the release pull request, or the tag's commit where its release lacks an archive or its sum.
   plan:
     name: plan the programs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # list the pull requests this push's commit belongs to
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       commit: ${{ steps.plan.outputs.commit }}
@@ -89,9 +93,27 @@ jobs:
           tag="v$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if ! commit="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")"; then
-            # No tag of this version yet: build this commit, which `release` may release in this run.
+            # No tag of this version yet. release-plz.toml sets `release_always = false`, so
+            # `release` creates the tag only where this commit belongs to a pull request whose
+            # branch starts with release-plz's `pr_branch_prefix`: the merge of the release pull
+            # request. Build this commit on that push alone.
             echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-            echo "build=true" >> "$GITHUB_OUTPUT"
+            prefix="$(python3 -c 'import tomllib; print(tomllib.load(open("release-plz.toml", "rb")).get("workspace", {}).get("pr_branch_prefix", "release-plz-"))')"
+            code="$(curl -sS -o pulls.json -w '%{http_code}' \
+              -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls?per_page=100" || true)"
+            if [ "$code" != 200 ]; then
+              # Build where the pull requests can't be read, so a release doesn't go without its
+              # programs.
+              echo "::warning::Reading the pull requests of $GITHUB_SHA answered HTTP $code, so this run builds the programs."
+              build=true
+            elif jq -e --arg prefix "$prefix" 'any(.[]; (.head.ref // "") | startswith($prefix))' pulls.json > /dev/null; then
+              build=true
+            else
+              echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs."
+              build=false
+            fi
+            echo "build=$build" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # The tag exists: build from its commit where its release lacks an archive or its sum.
