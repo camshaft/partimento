@@ -196,6 +196,7 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
 
 fn order(finding: &Finding) -> (&str, u32, &str, Option<&str>, &str) {
     let requirement = finding.requirement.as_deref();
-    let rule = finding.rule.as_str();
-    (&finding.file, finding.line, rule, requirement, &finding.message)
+    let (file, rule) = (finding.file.as_str(), finding.rule.as_str());
+    let message = finding.message.as_str();
+    (file, finding.line, rule, requirement, message)
 }
