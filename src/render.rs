@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 
 use crate::config;
 use crate::model::{Field, Set};
-use crate::{ByteVec, Finding, Severity, Tree};
+use crate::{artifact, ByteVec, Cache, Finding, Severity, Tree};
 
 /// The rule of the findings [`drift`] reports.
 pub const DRIFT: &str = "drift";
@@ -128,6 +128,33 @@ pub fn generate(paths: Paths<'_>, sections: &[Section<'_>]) -> Generated {
         }
         let bytes = ByteVec::from(text(section));
         generated.tree.files.insert(text_path, bytes);
+    }
+    generated
+}
+
+/// Renders every section, in the order given, as [`generate`] does, reading the files of each
+/// section that `cache` keeps for that section's inputs and keeping the files of each other
+/// section. As in [`generate`], a later section's file takes the place of an earlier section's
+/// file at the same path.
+pub fn generate_cached<C: Cache>(
+    paths: Paths<'_>,
+    sections: &[Section<'_>],
+    cache: &C,
+) -> Generated {
+    if !cache.keeps() {
+        return generate(paths, sections);
+    }
+    let mut generated = Generated::default();
+    for section in sections {
+        let key = artifact::render_key(paths, section);
+        let kept = cache.get(&key).as_ref().and_then(artifact::decode_render);
+        let files = kept.unwrap_or_else(|| {
+            let files = generate(paths, std::slice::from_ref(section));
+            cache.put(key, artifact::encode_render(&files));
+            files
+        });
+        generated.tree.files.extend(files.tree.files);
+        generated.requirements.extend(files.requirements);
     }
     generated
 }
