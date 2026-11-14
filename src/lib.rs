@@ -10,6 +10,7 @@ use std::fmt;
 pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
+mod artifact;
 pub mod config;
 mod diff;
 pub mod model;
@@ -179,11 +180,9 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     options: &Options,
     cache: &C,
 ) -> Report {
-    // The artifacts that a cache keeps come with the solver backends.
-    let _ = cache;
     let mut findings = Vec::new();
     if let Some(config) = config::load(tree, &mut findings) {
-        let set = model::load(tree, &config, &mut findings);
+        let set = model::load_cached(tree, &config, cache, &mut findings);
         rules::check(&config, &set, &mut findings);
     }
     if options.final_pass {
