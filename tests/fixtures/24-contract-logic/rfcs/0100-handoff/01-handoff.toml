@@ -1,0 +1,19 @@
+[section]
+anchor = "handoff"
+title = "Handoff"
+problem = "A person doesn't know which job the greeting starts."
+motivation = "A handoff tells the person that the greeting starts the scheduled job."
+
+[[requirement]]
+id = "EX-0100-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST run the scheduled job when it prints a greeting."
+logic = ["EX-0001-001 -> EX-0200-001"]
+
+[[requirement]]
+id = "EX-0100-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it hands off."
+logic = ["EX-0100-002 -> EX-0001-001"]
