@@ -12,14 +12,16 @@ readme = "README.md"
 default = ["cli", "batsat"]
 # The command, src/main.rs.
 cli = []
-# The solver backends. Step 3 adds the backends themselves.
-batsat = []
-varisat = []
+# The solver backends, each behind its own feature: batsat by default, varisat beside it.
+batsat = ["dep:batsat"]
+varisat = ["dep:varisat"]
 
 [dependencies]
+batsat = { version = "0.6", optional = true }
 etude-bytevec = "0.1"
 serde = { version = "1", features = ["derive"] }
 toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
+varisat = { version = "0.2.2", optional = true }
 
 [[bin]]
 name = "partimento"
