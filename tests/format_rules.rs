@@ -245,6 +245,9 @@ mod binary {
         let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
         std::fs::set_permissions(&file, Permissions::from_mode(0o644)).expect("the mode is set");
         if readable {
+            // In CI, where the environment sets `CI`, the test has to reach the assertions below.
+            let message = "the test process reads a file of mode 000";
+            assert!(std::env::var_os("CI").is_none(), "{message}");
             return;
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
