@@ -59,6 +59,7 @@ pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Ve
             cx.build(requirement);
         }
     }
+    cx.retire();
     cx.cycles();
     cx.polarity();
     cx.solve::<B>();
@@ -105,6 +106,8 @@ struct Context<'a> {
     planned: BTreeSet<u32>,
     /// The requirements that a composition holds as its parts, or as its exception.
     parts: BTreeSet<&'a str>,
+    /// The requirements of the set that a `supersedes` relation retires.
+    superseded: BTreeSet<&'a str>,
     /// The `implies` and `refines` relations, from requirement to target.
     cycle: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The `depends_on`, `implies` and `refines` relations, from requirement to target.
@@ -123,6 +126,7 @@ impl<'a> Context<'a> {
             retired: BTreeMap::new(),
             planned: BTreeSet::new(),
             parts: BTreeSet::new(),
+            superseded: BTreeSet::new(),
             cycle: BTreeMap::new(),
             leads: BTreeMap::new(),
             bounds: BTreeMap::new(),
@@ -284,6 +288,9 @@ impl<'a> Context<'a> {
             let noun = "the relation's target";
             self.resolve(r, target, noun, line, kind == "supersedes");
             if kind == "supersedes" {
+                if self.held.contains_key(target) {
+                    self.superseded.insert(target);
+                }
                 continue;
             }
             self.boundary(r, target, noun, line);
@@ -318,6 +325,7 @@ impl<'a> Context<'a> {
                         self.resolve(r, name, "the formula's atom", line, false);
                         self.boundary(r, name, "the formula's atom", line);
                     }
+                    self.joined(r, &names, line);
                     self.push(formula, r, line);
                 }
             }
@@ -395,6 +403,29 @@ impl<'a> Context<'a> {
             let message = format!(
                 "{noun} `{id}` is a requirement of system `{other}`, and this one is of system \
                  `{own}`: two systems meet only through the requirements of a contract RFC"
+            );
+            self.error(SYSTEM_BOUNDARY, r, line, message);
+        }
+    }
+
+    /// Adds a finding where a formula that a contract RFC, or an RFC of no system, holds joins
+    /// the requirements of two systems or more. A formula of a system's own RFC is checked atom
+    /// by atom, by [`Self::boundary`].
+    fn joined(&mut self, r: Requirement<'a>, names: &BTreeSet<String>, line: u32) {
+        if self.system_of(r.rfc).is_some() {
+            return;
+        }
+        let systems: BTreeSet<&str> = names
+            .iter()
+            .filter_map(|name| self.rfc_of(name))
+            .filter_map(|number| self.system_of(number))
+            .collect();
+        if systems.len() > 1 {
+            let list: Vec<String> = systems.iter().map(|system| format!("`{system}`")).collect();
+            let message = format!(
+                "the formula joins requirements of systems {}: two systems meet only through \
+                 the requirements of a contract RFC",
+                list.join(", ")
             );
             self.error(SYSTEM_BOUNDARY, r, line, message);
         }
@@ -528,6 +559,17 @@ impl<'a> Context<'a> {
             self.found
                 .push(at_origin(CONDITION_VACUOUS, &condition.origin, message));
         }
+    }
+
+    /// Leaves out the formulas, the conditions and the relations of each requirement that a
+    /// `supersedes` relation retires, so the set holds only the requirements in force.
+    fn retire(&mut self) {
+        let superseded = &self.superseded;
+        let live = |origin: &Origin| !superseded.contains(origin.requirement.as_str());
+        self.set.formulas.retain(|entry| live(&entry.origin));
+        self.set.conditions.retain(|condition| live(&condition.origin));
+        self.leads.retain(|id, _| !superseded.contains(id));
+        self.cycle.retain(|id, _| !superseded.contains(id));
     }
 
     fn push(&mut self, formula: Formula, r: Requirement<'a>, line: u32) {
@@ -778,15 +820,21 @@ pub fn consistency<B: Backend + Default>(set: &FormulaSet) -> Consistency {
     let mut vacuous = Vec::new();
     if conflict.is_none() {
         let mut assumptions = selectors;
+        // One solve for each distinct atom: the conditions that share an atom share its answer.
+        let mut holds: BTreeMap<Lit, bool> = BTreeMap::new();
         for (index, condition) in set.conditions.iter().enumerate() {
             let atom = encoding
                 .atom_lit(&condition.atom)
                 .expect("the encoding holds each condition's atom");
-            assumptions.push(atom);
-            if let Answer::Unsat { .. } = encoding.solve(&assumptions) {
+            let can_hold = *holds.entry(atom).or_insert_with(|| {
+                assumptions.push(atom);
+                let answer = encoding.solve(&assumptions);
+                assumptions.pop();
+                answer == Answer::Sat
+            });
+            if !can_hold {
                 vacuous.push(index);
             }
-            assumptions.pop();
         }
     }
     Consistency { conflict, vacuous }
@@ -886,6 +934,29 @@ mod tests {
         }
     }
 
+    thread_local! {
+        static SOLVES: std::cell::Cell<usize> = std::cell::Cell::new(0);
+    }
+
+    /// A backend that counts its solves on the thread that runs it.
+    #[derive(Default)]
+    struct Counted<B>(B);
+
+    impl<B: Backend> Backend for Counted<B> {
+        fn new_var(&mut self) -> Lit {
+            self.0.new_var()
+        }
+
+        fn add_clause(&mut self, clause: &[Lit]) {
+            self.0.add_clause(clause);
+        }
+
+        fn solve(&mut self, assumptions: &[Lit]) -> Answer {
+            SOLVES.with(|count| count.set(count.get() + 1));
+            self.0.solve(assumptions)
+        }
+    }
+
     fn empty_set<B: Backend + Default>() {
         assert_eq!(
             consistency::<B>(&FormulaSet::default()),
@@ -937,8 +1008,19 @@ mod tests {
         assert_eq!(found.vacuous, vec![0, 1]);
     }
 
+    fn one_solve_per_distinct_atom<B: Backend + Default>() {
+        SOLVES.with(|count| count.set(0));
+        let formulas = ["e -> f", "e -> !f"];
+        let found = consistency::<Counted<B>>(&set(&formulas, &["e", "g", "e", "g"]));
+        assert_eq!(found.conflict, None);
+        assert_eq!(found.vacuous, vec![0, 2]);
+        // One solve for check 1, and one for each of the two distinct atoms.
+        assert_eq!(SOLVES.with(std::cell::Cell::get), 3);
+    }
+
     crate::solver::backend_tests!(
         empty_set,
+        one_solve_per_distinct_atom,
         consistent_set,
         conflict_is_minimal,
         conflict_is_one_of_two,

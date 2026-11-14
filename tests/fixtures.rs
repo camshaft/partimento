@@ -73,8 +73,21 @@ const FIXTURES: &[Fixture] = &[
     fixture!("10-parameter-bounds"),
     fixture!("16-exactly-one"),
     fixture!("17-unless"),
+    fixture!("20-minimal-core"),
     fixture!("21-polarity-conflict"),
     fixture!("22-malformed-formulas"),
+    fixture!("23-supersedes"),
+    fixture!(
+        "24-contract-logic";
+        "spec.toml",
+        "rfcs/index.toml",
+        "rfcs/0001-greetings/rfc.toml",
+        "rfcs/0001-greetings/01-greeting.toml",
+        "rfcs/0100-handoff/rfc.toml",
+        "rfcs/0100-handoff/01-handoff.toml",
+        "rfcs/0200-scheduling/rfc.toml",
+        "rfcs/0200-scheduling/01-schedule.toml",
+    ),
 ];
 
 /// The listed fixture of that name.

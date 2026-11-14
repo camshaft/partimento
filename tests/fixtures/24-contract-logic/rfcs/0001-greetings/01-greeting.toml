@@ -1,0 +1,18 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it starts."
+
+[[requirement]]
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the job's name in the greeting."
+conditions = ["EX-0200-001"]
