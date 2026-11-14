@@ -21,6 +21,9 @@ pub const RFC: &str = "rfc.toml";
 /// The rule of a file that is missing or named outside the set's layout.
 pub const LAYOUT: &str = "layout";
 
+/// The rule of an index row that still stores its RFC's state.
+pub const INDEX_STATE: &str = "index-state";
+
 /// The RFCs of a set, as its files hold them.
 #[derive(Clone, Debug, Default)]
 pub struct Set {
@@ -30,25 +33,25 @@ pub struct Set {
     pub rfcs: Vec<Rfc>,
 }
 
-/// The RFC index: every RFC of the set by number, written or planned.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The RFC index: every RFC of the set by number. An RFC is written where the set holds its
+/// directory, and planned where the index lists it and the set doesn't hold its directory.
+#[derive(Clone, Debug, Default)]
 pub struct Index {
-    #[serde(default)]
     pub rfc: Vec<IndexEntry>,
 }
 
 /// One RFC of the index.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct IndexEntry {
     pub number: u32,
     pub title: String,
     pub area: String,
-    pub state: State,
+    /// The state the row still stores, where it stores one. The check doesn't read it, since
+    /// the RFC's directory decides whether the RFC is written.
+    pub state: Option<Located<State>>,
 }
 
-/// Whether an RFC of the index is written yet.
+/// The state an index row may still store: whether its RFC is written yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum State {
@@ -179,6 +182,23 @@ struct RawMeta {
     retired: Vec<Spanned<String>>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIndex {
+    #[serde(default)]
+    rfc: Vec<RawEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEntry {
+    number: u32,
+    title: String,
+    area: String,
+    #[serde(default)]
+    state: Option<Spanned<State>>,
+}
+
 /// Reads the RFCs from the tree, adding a finding for each file that is missing, misnamed or
 /// doesn't parse.
 pub fn load(tree: &Tree, config: &Config, findings: &mut Vec<Finding>) -> Set {
@@ -200,7 +220,7 @@ pub(crate) fn load_cached<C: Cache>(
     match tree.files.get(&index) {
         Some(bytes) => {
             let text = source::text(&index, bytes, findings);
-            set.index = text.and_then(|text| source::parse(&index, &text, findings));
+            set.index = text.and_then(|text| load_index(&index, &text, findings));
         }
         None => {
             let message = "the RFC index is missing";
@@ -264,6 +284,34 @@ pub(crate) fn load_cached<C: Cache>(
         set.rfcs.push(rfc);
     }
     set
+}
+
+/// The RFC index that `file` holds as `text`, with a warning at each row that still stores its
+/// RFC's state.
+fn load_index(file: &str, text: &str, findings: &mut Vec<Finding>) -> Option<Index> {
+    let raw: RawIndex = source::parse(file, text, findings)?;
+    let lines = source::Lines::new(text.as_bytes());
+    let mut index = Index::default();
+    for entry in raw.rfc {
+        let state = entry.state.map(|state| Located {
+            line: lines.line(state.span().start),
+            value: state.into_inner(),
+        });
+        if let Some(state) = &state {
+            let number = entry.number;
+            let message = format!(
+                "RFC {number}'s state follows from its directory, so the row can leave out `state`"
+            );
+            findings.push(Finding::warning(INDEX_STATE, file, state.line, None, message));
+        }
+        index.rfc.push(IndexEntry {
+            number: entry.number,
+            title: entry.title,
+            area: entry.area,
+            state,
+        });
+    }
+    Some(index)
 }
 
 /// The RFC number of a directory named `<nnnn>-<slug>`.
@@ -407,7 +455,7 @@ fn read_fields(table: RawTable, lines: &source::Lines) -> Vec<Field> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, Field, Set, LAYOUT};
+    use super::{load, load_index, Field, Located, Set, State, INDEX_STATE, LAYOUT};
     use crate::{config, ByteVec, Finding, Tree};
 
     /// The configuration of the tests' set.
@@ -497,5 +545,34 @@ id = "EX-0001-002"
         let meta = set.rfcs[0].meta.as_ref().expect("rfc.toml parses");
         let lines: Vec<u32> = meta.retired.iter().map(|id| id.line).collect();
         assert_eq!(lines, [6, 7]);
+    }
+
+    /// An index whose first row doesn't store a state, and whose second stores one on line 10.
+    const ROWS: &str = r#"[[rfc]]
+number = 1
+title = "Greetings"
+area = "core"
+
+[[rfc]]
+number = 2
+title = "Farewells"
+area = "core"
+state = "planned"
+"#;
+
+    #[test]
+    fn an_index_row_parses_with_and_without_a_stored_state() {
+        let mut findings = Vec::new();
+        let loaded = load_index("rfcs/index.toml", ROWS, &mut findings);
+        let index = loaded.expect("the index parses");
+        let states: Vec<_> = index.rfc.iter().map(|entry| entry.state.clone()).collect();
+        let stored = Located {
+            line: 10,
+            value: State::Planned,
+        };
+        assert_eq!(states, [None, Some(stored)]);
+        let message = "RFC 2's state follows from its directory, so the row can leave out `state`";
+        let warning = Finding::warning(INDEX_STATE, "rfcs/index.toml", 10, None, message);
+        assert_eq!(findings, [warning]);
     }
 }

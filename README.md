@@ -89,16 +89,18 @@ last = 199
 
 ### The RFCs
 
-`index.toml`, in the RFCs' directory, lists every RFC of the set, with `state` `written` or
-`planned`:
+`index.toml`, in the RFCs' directory, lists every RFC of the set by its number, title and area:
 
 ```toml
 [[rfc]]
 number = 1
 title = "Greetings"
 area = "core"
-state = "written"
 ```
+
+An RFC is written where the set holds its directory, and planned where the index lists it
+and the set doesn't hold a directory of its number. The RFC's directory decides its state, so a
+row that still stores `state` gets a warning.
 
 Each written RFC has a directory `<nnnn>-<slug>` that holds its `rfc.toml`:
 

@@ -127,8 +127,8 @@ fn generated() -> Tree {
     let mut index = String::new();
     for rfc in 1..=RFCS {
         let entry = format!(
-            "[[rfc]]\nnumber = {rfc}\ntitle = \"Generated {rfc}\"\narea = \"core\"\n\
-             state = \"written\"\n\n"
+            "[[rfc]]\nnumber = {rfc}\ntitle = \"Generated {rfc}\"\n\
+             area = \"core\"\n\n"
         );
         index.push_str(&entry);
         let dir = format!("rfcs/{rfc:04}-generated");
