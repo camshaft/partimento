@@ -111,6 +111,32 @@ fn a_tree_without_spec_toml_fails_at_spec_toml() {
     assert_eq!(finding.file, "spec.toml");
 }
 
+/// Fixture 05-key-word's tree with `paths.rfcs`, at line 6 of its spec.toml, set to `value`.
+fn with_rfcs(value: &str) -> Tree {
+    let mut tree = tree(&FIXTURES[1]);
+    let spec = include_str!("fixtures/05-key-word/spec.toml");
+    let spec = spec.replace("rfcs = \"rfcs\"", &format!("rfcs = {value:?}"));
+    tree.files.insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree
+}
+
+#[test]
+fn a_path_that_leaves_the_tree_fails_at_spec_toml() {
+    let outside = ["", "/", "/home", "..", "../..", "rfcs/..", "./rfcs", "rfcs/", "rfcs//x"];
+    let other_forms = ["rfcs\\x", "c:rfcs"];
+    for value in outside.iter().chain(other_forms.iter()) {
+        let report = partimento::check_default(&with_rfcs(value), &Options::default());
+        assert_eq!(report.findings.len(), 1, "{value:?}: {}", lines(&report));
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule, "config", "{value:?}");
+        assert_eq!(finding.file, "spec.toml", "{value:?}");
+        assert_eq!(finding.line, 6, "{value:?}");
+        assert!(report.failed(), "{value:?}");
+    }
+    let report = partimento::check_default(&with_rfcs("rfcs"), &Options::default());
+    assert_eq!(lines(&report), FIXTURES[1].expected);
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};
@@ -166,5 +192,80 @@ mod binary {
         let dir = root("no-such-fixture");
         let dir = dir.to_str().expect("the path is UTF-8");
         assert_eq!(run(&["check", "--root", dir]).status.code(), Some(2));
+    }
+
+    /// An empty directory under the build's temporary directory, for one test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the directory is made");
+        dir
+    }
+
+    /// Writes fixture 05-key-word's files into `dir`.
+    fn write_fixture(dir: &Path) {
+        for (path, text) in FIXTURES[1].files {
+            let file = dir.join(path);
+            let parent = file.parent().expect("the file is in a directory");
+            std::fs::create_dir_all(parent).expect("the directory is made");
+            std::fs::write(file, text).expect("the file is written");
+        }
+    }
+
+    /// Runs `check` on `dir`, and asserts that it exits with 2, prints nothing on stdout, and
+    /// writes `error` on stderr.
+    fn exits_with_2(dir: &Path, error: &str) {
+        let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{stderr}");
+        assert!(output.stdout.is_empty(), "{stderr}");
+        assert!(stderr.contains(error), "{stderr}");
+    }
+
+    #[test]
+    fn a_path_that_leaves_the_tree_stops_the_read() {
+        let dir = scratch("rfcs-outside");
+        write_fixture(&dir);
+        let spec = std::fs::read_to_string(dir.join("spec.toml")).expect("the file is read");
+        let spec = spec.replace("rfcs = \"rfcs\"", "rfcs = \"../..\"");
+        std::fs::write(dir.join("spec.toml"), spec).expect("the file is written");
+        let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.starts_with("error[config] spec.toml:6: `paths.rfcs`"), "{stdout}");
+        assert_eq!(stdout.lines().count(), 1, "{stdout}");
+        assert_eq!(output.status.code(), Some(1));
+    }
+
+    #[test]
+    fn a_directory_that_is_a_file_exits_with_2() {
+        let dir = scratch("rfcs-is-a-file");
+        write_fixture(&dir);
+        std::fs::remove_dir_all(dir.join("rfcs")).expect("the directory is removed");
+        std::fs::write(dir.join("rfcs"), "").expect("the file is written");
+        exits_with_2(&dir, "rfcs: ");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symbolic_link_exits_with_2() {
+        use std::os::unix::fs::symlink;
+
+        let dir = scratch("linked-section");
+        write_fixture(&dir);
+        let section = dir.join("rfcs/0001-greetings/02-link.toml");
+        symlink(dir.join("spec.toml"), section).expect("the link is made");
+        exits_with_2(&dir, "02-link.toml: a symbolic link");
+
+        let dir = scratch("linked-directory");
+        write_fixture(&dir);
+        std::fs::rename(dir.join("rfcs"), dir.join("sources")).expect("the directory is moved");
+        symlink(dir.join("sources"), dir.join("rfcs")).expect("the link is made");
+        exits_with_2(&dir, "rfcs: a symbolic link");
+
+        let dir = scratch("linked-spec");
+        write_fixture(&dir);
+        std::fs::rename(dir.join("spec.toml"), dir.join("real.toml")).expect("the file is moved");
+        symlink(dir.join("real.toml"), dir.join("spec.toml")).expect("the link is made");
+        exits_with_2(&dir, "spec.toml: a symbolic link");
     }
 }

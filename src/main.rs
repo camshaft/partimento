@@ -90,6 +90,9 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
 fn read_tree(root: &Path) -> Result<Tree, String> {
     let mut tree = Tree::default();
     let spec = root.join(config::FILE);
+    if is_link(&spec) {
+        return Err(link(&spec));
+    }
     let bytes = fs::read(&spec).map_err(|error| unreadable(&spec, &error))?;
     let file = config::FILE.to_string();
     tree.files.insert(file, ByteVec::from(bytes));
@@ -105,9 +108,14 @@ fn read_tree(root: &Path) -> Result<Tree, String> {
     Ok(tree)
 }
 
-/// Reads each file under `dir`, a directory relative to `root`, where it is there.
+/// Reads each file under `dir`, a directory relative to `root`, where it is there. It reads only
+/// regular files and directories: a symbolic link, or an entry of any other kind, stops the read,
+/// so that the command reads nothing outside the tree.
 fn read_dir(root: &Path, dir: &str, files: &mut BTreeMap<String, ByteVec>) -> Result<(), String> {
     let path = root.join(dir);
+    if is_link(&path) {
+        return Err(link(&path));
+    }
     let entries = match fs::read_dir(&path) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -123,6 +131,13 @@ fn read_dir(root: &Path, dir: &str, files: &mut BTreeMap<String, ByteVec>) -> Re
             return Err(format!("{}: {message}", path.display()));
         };
         let kind = entry.file_type().map_err(failed)?;
+        if kind.is_symlink() {
+            return Err(link(&entry.path()));
+        }
+        if !kind.is_dir() && !kind.is_file() {
+            let message = "neither a file nor a directory";
+            return Err(format!("{}: {message}", entry.path().display()));
+        }
         names.push((name.to_string(), kind.is_dir()));
     }
     for (name, is_dir) in names {
@@ -140,6 +155,15 @@ fn read_dir(root: &Path, dir: &str, files: &mut BTreeMap<String, ByteVec>) -> Re
 
 fn unreadable(path: &Path, error: &io::Error) -> String {
     format!("{}: {error}", path.display())
+}
+
+/// Whether `path` is a symbolic link, which the command doesn't follow.
+fn is_link(path: &Path) -> bool {
+    matches!(fs::symlink_metadata(path), Ok(metadata) if metadata.file_type().is_symlink())
+}
+
+fn link(path: &Path) -> String {
+    format!("{}: a symbolic link, which the command doesn't follow", path.display())
 }
 
 fn text(report: &Report) -> String {

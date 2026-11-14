@@ -33,9 +33,9 @@ pub struct Config {
     pub implementation_terms: Vec<String>,
 }
 
-/// The directories of the set, relative to the root of the tree.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The directories of the set, relative to the root of the tree, each with its parts joined by
+/// `/` and none of them empty, `.` or `..`, as `load` checks.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paths {
     /// The RFC sources: the index and one directory for each RFC.
     pub rfcs: String,
@@ -75,7 +75,7 @@ impl NumberRange {
 #[serde(deny_unknown_fields)]
 struct Raw {
     prefix: Spanned<String>,
-    paths: Paths,
+    paths: RawPaths,
     levels: Spanned<Vec<String>>,
     #[serde(default, rename = "system")]
     systems: Vec<RawSystem>,
@@ -93,6 +93,14 @@ struct RawSystem {
     last: u32,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPaths {
+    rfcs: Spanned<String>,
+    rendered: Spanned<String>,
+    requirements: Spanned<String>,
+}
+
 impl RawSystem {
     fn range(&self) -> NumberRange {
         NumberRange {
@@ -107,6 +115,14 @@ fn system(raw: RawSystem) -> System {
         rfcs: raw.range(),
         name: raw.name.into_inner(),
     }
+}
+
+/// Whether `path` names a directory of the tree as the library and the command both key it:
+/// relative to the root, its parts joined by `/`, none of them empty, `.` or `..`. A path of any
+/// other form would let the command read outside its root.
+fn in_tree(path: &str) -> bool {
+    let plain = |part: &str| !part.is_empty() && part != "." && part != "..";
+    !path.contains(['\\', ':']) && path.split('/').all(plain)
 }
 
 /// Reads the configuration from the tree, or adds the findings that say why it can't.
@@ -145,6 +161,21 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         }
     }
 
+    let paths = &raw.paths;
+    let keys = [
+        ("rfcs", &paths.rfcs),
+        ("rendered", &paths.rendered),
+        ("requirements", &paths.requirements),
+    ];
+    for (key, path) in keys {
+        let value = path.get_ref();
+        if !in_tree(value) {
+            let message =
+                format!("`paths.{key}` is `{value}`, which isn't a directory of the tree");
+            findings.push(Finding::error(RULE, FILE, line(path.span()), None, message));
+        }
+    }
+
     let mut ranges = Vec::new();
     for system in &raw.systems {
         let name = format!("system `{}`", system.name.get_ref());
@@ -174,7 +205,11 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
     let systems = raw.systems.into_iter().map(system).collect();
     Some(Config {
         prefix: raw.prefix.into_inner(),
-        paths: raw.paths,
+        paths: Paths {
+            rfcs: raw.paths.rfcs.into_inner(),
+            rendered: raw.paths.rendered.into_inner(),
+            requirements: raw.paths.requirements.into_inner(),
+        },
         levels: raw.levels.into_inner(),
         systems,
         contracts: raw.contracts.map(Spanned::into_inner),
