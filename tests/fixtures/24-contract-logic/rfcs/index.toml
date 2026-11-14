@@ -1,0 +1,17 @@
+[[rfc]]
+number = 1
+title = "Greetings"
+area = "platform"
+state = "written"
+
+[[rfc]]
+number = 100
+title = "Handoff"
+area = "contracts"
+state = "written"
+
+[[rfc]]
+number = 200
+title = "Scheduling"
+area = "orchestration"
+state = "written"

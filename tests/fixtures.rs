@@ -4,42 +4,11 @@
 //! The files of each fixture are embedded at compile time, so the library's tests read no file
 //! and run on wasm32 too.
 
-use std::fmt::Display;
+#[macro_use]
+mod common;
 
+use common::{each_line, fails, lines, tree, tree_of, Fixture};
 use partimento::{config, Binding, ByteVec, ChangeKind, Options, Report, Tree};
-
-/// A fixture: the files of its tree, by their paths, and the findings the check prints for it.
-struct Fixture {
-    name: &'static str,
-    files: &'static [(&'static str, &'static str)],
-    expected: &'static str,
-}
-
-/// One file of a fixture's tree, by its path in the tree and its text.
-macro_rules! embed {
-    ($name:literal, $path:literal) => {
-        ($path, include_str!(concat!("fixtures/", $name, "/", $path)))
-    };
-}
-
-/// A fixture by its directory under tests/fixtures, with the paths of its files beside its
-/// spec.toml, its RFC index, and the rfc.toml and 01-greeting.toml of its RFC 0001, which come
-/// with each fixture.
-macro_rules! fixture {
-    ($name:literal $(, $path:literal)*) => {
-        Fixture {
-            name: $name,
-            files: &[
-                embed!($name, "spec.toml"),
-                embed!($name, "rfcs/index.toml"),
-                embed!($name, "rfcs/0001-greetings/rfc.toml"),
-                embed!($name, "rfcs/0001-greetings/01-greeting.toml"),
-                $(embed!($name, $path),)*
-            ],
-            expected: include_str!(concat!("fixtures/", $name, "/expected.txt")),
-        }
-    };
-}
 
 const FIXTURES: &[Fixture] = &[
     fixture!(
@@ -84,41 +53,6 @@ const STALE: &str = "no section generates this file: `partimento render` removes
 fn named(name: &str) -> &'static Fixture {
     let fixture = FIXTURES.iter().find(|fixture| fixture.name == name);
     fixture.expect("the fixture is listed")
-}
-
-fn tree(fixture: &Fixture) -> Tree {
-    tree_of(fixture.files)
-}
-
-/// A tree of the files, by their paths.
-fn tree_of(files: &[(&str, &str)]) -> Tree {
-    let mut tree = Tree::default();
-    for (path, text) in files {
-        let bytes = ByteVec::from(text.to_string());
-        tree.files.insert(path.to_string(), bytes);
-    }
-    tree
-}
-
-/// The findings as the command prints them, one a line.
-fn lines(report: &Report) -> String {
-    each_line(&report.findings)
-}
-
-/// The items, findings or changes, as the command prints them, one a line.
-fn each_line(items: &[impl Display]) -> String {
-    let mut text = String::new();
-    for item in items {
-        text.push_str(&item.to_string());
-        text.push('\n');
-    }
-    text
-}
-
-/// Whether the fixture's expected findings fail the check.
-fn fails(fixture: &Fixture) -> bool {
-    let error = |line: &str| line.starts_with("error");
-    fixture.expected.lines().any(error)
 }
 
 /// Whether the fixture's expected findings fail a format rule: an error of a rule other than the

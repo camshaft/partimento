@@ -1,0 +1,5 @@
+number = 100
+title = "Handoff"
+area = "contracts"
+abstract = "How the greeting hands its job to the schedule."
+retired = []

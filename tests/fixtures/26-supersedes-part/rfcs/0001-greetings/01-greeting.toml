@@ -1,0 +1,39 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting and a banner when it starts."
+compose = "all_of"
+parts = ["EX-0001-002", "EX-0001-003"]
+
+[[requirement]]
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it starts."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a banner when it starts."
+
+[[requirement]]
+id = "EX-0001-004"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a banner when it starts and when it stops."
+relations = [{ kind = "supersedes", target = "EX-0001-001" }]
+
+[[requirement]]
+id = "EX-0001-005"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST stay silent when it starts."
+relations = [{ kind = "conflicts_with", target = "EX-0001-002" }]

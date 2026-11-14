@@ -1,0 +1,269 @@
+//! The fixtures of checks 1 to 5, each checked through the library under each enabled solver
+//! backend and, with the `cli` feature, through the command.
+//!
+//! The files of each fixture are embedded at compile time, so the library's tests read no file
+//! and run on wasm32 too. A fixture holds its sources alone: each test adds the files that
+//! `partimento render` generates from them, which the drift rule asks for, so that a fixture's
+//! findings are those of the checks.
+
+#[macro_use]
+mod common;
+
+use common::{fails, lines, tree, Fixture};
+use partimento::solver::{Answer, Backend, Lit};
+use partimento::{ByteVec, Options, Report, Tree};
+
+const FIXTURES: &[Fixture] = &[
+    fixture!("03-unresolved-relation"),
+    fixture!("04-relation-cycle"),
+    fixture!("06-minimal-conflict"),
+    fixture!("07-logic-conflict"),
+    fixture!(
+        "08-system-boundary",
+        "rfcs/0200-scheduling/rfc.toml",
+        "rfcs/0200-scheduling/01-schedule.toml"
+    ),
+    fixture!("09-vacuous-condition"),
+    fixture!("10-parameter-bounds"),
+    fixture!("16-exactly-one"),
+    fixture!("17-unless"),
+    fixture!("20-minimal-core"),
+    fixture!("21-polarity-conflict"),
+    fixture!("22-malformed-formulas"),
+    fixture!("23-supersedes"),
+    fixture!("25-supersedes-bound"),
+    fixture!("26-supersedes-part"),
+    fixture!(
+        "24-contract-logic",
+        "rfcs/0100-handoff/rfc.toml",
+        "rfcs/0100-handoff/01-handoff.toml",
+        "rfcs/0200-scheduling/rfc.toml",
+        "rfcs/0200-scheduling/01-schedule.toml"
+    ),
+];
+
+/// The listed fixture of that name.
+fn named(name: &str) -> &'static Fixture {
+    let found = FIXTURES.iter().find(|fixture| fixture.name == name);
+    found.expect("the fixture is listed")
+}
+
+/// The tree with the files that `partimento render` generates from it. A tree whose format rules
+/// fail doesn't render, and stays as it is.
+fn with_render(mut tree: Tree) -> Tree {
+    if let Ok(generated) = partimento::render(&tree) {
+        tree.files.extend(generated.files);
+    }
+    tree
+}
+
+/// The fixture's tree with the files that `partimento render` generates from it.
+fn rendered(fixture: &Fixture) -> Tree {
+    with_render(tree(fixture))
+}
+
+/// Each finding's rule, file and line.
+fn places(report: &Report) -> Vec<(&str, &str, u32)> {
+    let mut places = Vec::new();
+    for finding in &report.findings {
+        let (rule, file) = (finding.rule.as_str(), finding.file.as_str());
+        places.push((rule, file, finding.line));
+    }
+    places
+}
+
+/// A backend that answers each `Unsat` with every assumption as its core, the widest core a
+/// backend may answer, so that the checks narrow it to a minimal one themselves.
+#[derive(Default)]
+struct Wide<B>(B);
+
+impl<B: Backend> Backend for Wide<B> {
+    fn new_var(&mut self) -> Lit {
+        self.0.new_var()
+    }
+
+    fn add_clause(&mut self, clause: &[Lit]) {
+        self.0.add_clause(clause);
+    }
+
+    fn solve(&mut self, assumptions: &[Lit]) -> Answer {
+        match self.0.solve(assumptions) {
+            Answer::Sat => Answer::Sat,
+            Answer::Unsat { .. } => Answer::Unsat {
+                core: assumptions.to_vec(),
+            },
+        }
+    }
+}
+
+/// A check of a tree under one backend.
+type Check = fn(&Tree, &Options) -> Report;
+
+/// Each enabled backend by its name, and each again behind [`Wide`].
+fn backends() -> Vec<(&'static str, Check)> {
+    let mut backends: Vec<(&'static str, Check)> = Vec::new();
+    #[cfg(feature = "batsat")]
+    {
+        use partimento::solver::Batsat;
+        backends.push(("batsat", partimento::check::<Batsat>));
+        backends.push(("wide batsat", partimento::check::<Wide<Batsat>>));
+    }
+    #[cfg(feature = "varisat")]
+    {
+        use partimento::solver::Varisat;
+        backends.push(("varisat", partimento::check::<Varisat>));
+        backends.push(("wide varisat", partimento::check::<Wide<Varisat>>));
+    }
+    backends
+}
+
+#[test]
+fn each_fixture_holds_its_expected_findings() {
+    let mut failures = Vec::new();
+    for (backend, check) in backends() {
+        for fixture in FIXTURES {
+            let report = check(&rendered(fixture), &Options::default());
+            let found = lines(&report);
+            let (name, expected) = (fixture.name, fixture.expected);
+            let place = format!("{name} under {backend}");
+            if found != expected {
+                failures.push(format!("{place}:\nexpected:\n{expected}found:\n{found}"));
+            }
+            if report.failed() != fails(fixture) {
+                failures.push(format!("{place}: the failure isn't the expected one"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_final_pass_turns_the_unresolved_relations_into_failures() {
+    let options = Options { final_pass: true };
+    let warning = "warning[relation-unresolved]";
+    let error = "error[relation-unresolved]";
+    for fixture in FIXTURES {
+        let report = partimento::check_default(&rendered(fixture), &options);
+        let expected = fixture.expected.replace(warning, error);
+        assert_eq!(lines(&report), expected, "{}", fixture.name);
+        let fails = expected.lines().any(|line| line.starts_with("error"));
+        assert_eq!(report.failed(), fails, "{}", fixture.name);
+    }
+}
+
+/// The path of RFC 0001's first section file.
+const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
+
+/// The path of the section file [`with_formula`] adds.
+const EXTRA_PATH: &str = "rfcs/0001-greetings/02-extra.toml";
+
+/// A section file whose requirement EX-0001-009, at line 8, holds `FORMULA` as its `logic` at
+/// line 12.
+const EXTRA: &str = r#"[section]
+anchor = "extra"
+title = "Extra"
+problem = "A test needs one more formula."
+motivation = "The formula constrains the other requirements."
+
+[[requirement]]
+id = "EX-0001-009"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print the time."
+logic = ["FORMULA"]
+"#;
+
+/// The fixture's tree with a second section file, at [`EXTRA_PATH`], whose requirement holds
+/// `formula`, and the files that `partimento render` generates from both.
+fn with_formula(fixture: &Fixture, formula: &str) -> Tree {
+    let mut tree = tree(fixture);
+    let text = EXTRA.replace("FORMULA", formula);
+    let path = EXTRA_PATH.to_string();
+    tree.files.insert(path, ByteVec::from(text));
+    with_render(tree)
+}
+
+#[test]
+fn exactly_one_fails_where_other_formulas_force_both_parts() {
+    let fixture = named("16-exactly-one");
+    let tree = with_formula(fixture, "EX-0001-002 & EX-0001-003");
+    // The pairwise exclusion at the `compose` line and the extra formula.
+    let expected = [
+        ("unsatisfiable", GREETING, 12),
+        ("unsatisfiable", EXTRA_PATH, 12),
+    ];
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(places(&report), expected, "{backend}: {}", lines(&report));
+        assert!(report.failed(), "{backend}");
+    }
+}
+
+#[test]
+fn an_unless_forces_its_requirement_only_where_its_exception_is_false() {
+    let fixture = named("17-unless");
+    // Where the exception is false, the requirement holds: denying both fails.
+    let tree = with_formula(fixture, "!EX-0001-001 & !EX-0001-002");
+    let expected = [
+        ("unsatisfiable", GREETING, 12),
+        ("unsatisfiable", EXTRA_PATH, 12),
+    ];
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(places(&report), expected, "{backend}: {}", lines(&report));
+    }
+    // Where the exception is true, the requirement may not hold.
+    let tree = with_formula(fixture, "!EX-0001-001 & EX-0001-002");
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(lines(&report), "", "{backend}");
+    }
+}
+
+#[cfg(feature = "cli")]
+mod binary {
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Output};
+
+    use partimento::Tree;
+
+    use super::{fails, rendered, FIXTURES};
+
+    fn run(args: &[&str]) -> Output {
+        let program = env!("CARGO_BIN_EXE_partimento");
+        let output = Command::new(program).args(args).output();
+        output.expect("the command runs")
+    }
+
+    /// An empty directory under the build's temporary directory, for one test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the directory is made");
+        dir
+    }
+
+    /// Writes the tree's files into `dir`, each at its path in the tree.
+    fn write_tree(dir: &Path, tree: &Tree) {
+        for (path, bytes) in &tree.files {
+            let file = dir.join(path);
+            let parent = file.parent().expect("the file is in a directory");
+            std::fs::create_dir_all(parent).expect("the directory is made");
+            let data = bytes.copy_to_bytes().to_vec();
+            std::fs::write(file, data).expect("the file is written");
+        }
+    }
+
+    #[test]
+    fn each_fixture_prints_its_expected_findings() {
+        for fixture in FIXTURES {
+            let dir = scratch(&format!("checks-{}", fixture.name));
+            write_tree(&dir, &rendered(fixture));
+            let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert_eq!(stdout, fixture.expected, "{}", fixture.name);
+            let code = i32::from(fails(fixture));
+            assert_eq!(output.status.code(), Some(code), "{}", fixture.name);
+        }
+    }
+}
