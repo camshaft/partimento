@@ -1,0 +1,136 @@
+name: release
+
+# Release pipeline with no stored token, after the camshaft release pattern (backbeat, bach,
+# bolero, etude). On each push to main, release-plz (https://release-plz.dev):
+#   - `release-pr` keeps a pull request open that raises the version and updates the CHANGELOG.
+#   - `release`, once that pull request merges, publishes the crate to crates.io, pushes the tag
+#     v<version> and creates the GitHub release. release-plz.toml sets `release_always = false`,
+#     so no other push to main publishes anything.
+#   - `binaries` builds static Linux programs for x86_64 and aarch64 and attaches them, with their
+#     SHA-256 sums, to that release.
+#
+# crates.io Trusted Publishing through GitHub OIDC (rust-lang/crates-io-auth-action): no
+# CARGO_REGISTRY_TOKEN and no personal token. The publisher is registered on crates.io for the
+# repository camshaft/partimento and the workflow release.yml. Until it is, the auth step fails
+# and the `release` job stops before it publishes anything.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Keep the pull request that raises the version and updates the CHANGELOG open and current.
+  release-pr:
+    name: release-plz PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+      - name: release-plz release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # After the release pull request merges: publish the crate through OIDC, push the tag and create
+  # the GitHub release. Its tag goes to the binaries job, which attaches the programs to it.
+  release:
+    name: release-plz release (publish + tag)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the tag and create the GitHub release
+      id-token: write # crates.io Trusted Publishing (OIDC)
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+      # Trade the GitHub OIDC id-token for a short-lived crates.io token.
+      - name: crates.io auth (OIDC Trusted Publishing)
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: release-plz release
+        id: release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      # The tag of this run's partimento release, or empty where this run released nothing.
+      - name: Release tag
+        id: tag
+        if: ${{ steps.release-plz.outputs.releases_created == 'true' }}
+        env:
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          set -euo pipefail
+          tag="$(printf '%s' "$RELEASES" | jq -r '.[] | select(.package_name == "partimento") | .tag')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  # Build the partimento program for each target and attach the archive and its SHA-256 sum to the
+  # release the `release` job created, with taiki-e/upload-rust-binary-action.
+  binaries:
+    name: binaries ${{ matrix.target }}
+    needs: release
+    if: ${{ needs.release.outputs.tag != '' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # upload the archives to the GitHub release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Static Linux programs through musl, each built on a runner of its own architecture.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+      # musl-tools holds the musl-gcc linker driver the *-linux-musl targets use.
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build and upload the partimento program
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: partimento
+          target: ${{ matrix.target }}
+          features: cli
+          archive: $bin-$target
+          checksum: sha256
+          locked: true
+          build-tool: cargo
+          ref: refs/tags/${{ needs.release.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
