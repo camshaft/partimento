@@ -71,7 +71,8 @@ fn lines(report: &Report) -> String {
 
 /// Whether the fixture's expected findings fail the check.
 fn fails(fixture: &Fixture) -> bool {
-    fixture.expected.lines().any(|line| line.starts_with("error"))
+    let error = |line: &str| line.starts_with("error");
+    fixture.expected.lines().any(error)
 }
 
 #[test]
@@ -85,7 +86,8 @@ fn each_fixture_holds_its_expected_findings() {
             failures.push(format!("{name}:\nexpected:\n{expected}found:\n{found}"));
         }
         if report.failed() != fails(fixture) {
-            failures.push(format!("{name}: the report's failure isn't the expected one"));
+            let message = format!("{name}: the report's failure isn't the expected one");
+            failures.push(message);
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
