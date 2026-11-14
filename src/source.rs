@@ -75,7 +75,8 @@ pub(crate) fn parse<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use super::{line_after, Lines};
+    use super::{line_after, parse, text, Lines};
+    use crate::ByteVec;
 
     /// A text of four lines, `a`, `bc`, an empty line and `d`, whose newlines are at 1, 4 and 5.
     const TEXT: &[u8] = b"a\nbc\n\nd";
@@ -122,5 +123,24 @@ mod tests {
         assert_eq!(line_after(max - 1), u32::MAX);
         assert_eq!(line_after(max), u32::MAX);
         assert_eq!(line_after(usize::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn a_file_that_isnt_utf8_has_its_finding_at_the_line_of_its_first_bad_byte() {
+        let bytes = ByteVec::from(b"a = 1\nb = \xff\n".to_vec());
+        let mut findings = Vec::new();
+        assert!(text("f.toml", &bytes, &mut findings).is_none());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].line, 2);
+    }
+
+    #[test]
+    fn a_parse_error_has_its_finding_at_the_line_of_the_error() {
+        let source = "a = 1\nb = 2\nc = \n";
+        let mut findings = Vec::new();
+        let parsed: Option<toml::Table> = parse("f.toml", source, &mut findings);
+        assert!(parsed.is_none());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].line, 3);
     }
 }
