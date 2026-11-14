@@ -1,0 +1,26 @@
+name: lockfile
+
+on:
+  push:
+    branches:
+      - lockfile-probe
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+
+      - name: Generate the lock file
+        run: cargo generate-lockfile
+
+      - name: Print the lock file
+        run: cat Cargo.lock
