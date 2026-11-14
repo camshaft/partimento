@@ -11,10 +11,13 @@ pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
 pub mod config;
+mod diff;
 pub mod model;
 pub mod rules;
 pub mod solver;
 mod source;
+
+pub use diff::{Binding, Change, ChangeKind};
 
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
@@ -192,6 +195,13 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     }
     findings.sort_by(|a, b| order(a).cmp(&order(b)));
     Report { findings }
+}
+
+/// Each requirement added, changed and retired from `base` to `head`, two trees of one set, in
+/// the order of its identifier; or, where either tree fails a format rule, each finding that
+/// fails, the base's first, with its file's path after the tree's side, `base:` or `head:`.
+pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
+    diff::changes(base, head)
 }
 
 fn order(finding: &Finding) -> (&str, u32, &str, Option<&str>, &str) {

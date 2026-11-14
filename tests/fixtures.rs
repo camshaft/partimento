@@ -4,7 +4,9 @@
 //! The files of each fixture are embedded at compile time, so the library's tests read no file
 //! and run on wasm32 too.
 
-use partimento::{ByteVec, Options, Report, Tree};
+use std::fmt::Display;
+
+use partimento::{Binding, ByteVec, ChangeKind, Options, Report, Tree};
 
 /// A fixture: the files of its tree, by their paths, and the findings the check prints for it.
 struct Fixture {
@@ -51,8 +53,13 @@ const FIXTURES: &[Fixture] = &[
 ];
 
 fn tree(fixture: &Fixture) -> Tree {
+    tree_of(fixture.files)
+}
+
+/// A tree of the files, by their paths.
+fn tree_of(files: &[(&str, &str)]) -> Tree {
     let mut tree = Tree::default();
-    for (path, text) in fixture.files {
+    for (path, text) in files {
         let bytes = ByteVec::from(text.to_string());
         tree.files.insert(path.to_string(), bytes);
     }
@@ -61,9 +68,14 @@ fn tree(fixture: &Fixture) -> Tree {
 
 /// The findings as the command prints them, one a line.
 fn lines(report: &Report) -> String {
+    each_line(&report.findings)
+}
+
+/// The items, findings or changes, as the command prints them, one a line.
+fn each_line(items: &[impl Display]) -> String {
     let mut text = String::new();
-    for finding in &report.findings {
-        text.push_str(&finding.to_string());
+    for item in items {
+        text.push_str(&item.to_string());
         text.push('\n');
     }
     text
@@ -73,6 +85,115 @@ fn lines(report: &Report) -> String {
 fn fails(fixture: &Fixture) -> bool {
     let error = |line: &str| line.starts_with("error");
     fixture.expected.lines().any(error)
+}
+
+/// The files of one side of fixture 15-diff, `base` or `head`, by their paths in its tree.
+macro_rules! diff_tree {
+    ($side:literal $(, $path:literal)* $(,)?) => {
+        &[$((
+            $path,
+            include_str!(concat!("fixtures/15-diff/", $side, "/", $path)),
+        ),)*]
+    };
+}
+
+/// The base tree of fixture 15-diff.
+const DIFF_BASE: &[(&str, &str)] = diff_tree!(
+    "base",
+    "spec.toml",
+    "rfcs/index.toml",
+    "rfcs/0001-greetings/rfc.toml",
+    "rfcs/0001-greetings/01-greeting.toml",
+);
+
+/// The head tree of fixture 15-diff, which moves a requirement to 02-farewell.toml.
+const DIFF_HEAD: &[(&str, &str)] = diff_tree!(
+    "head",
+    "spec.toml",
+    "rfcs/index.toml",
+    "rfcs/0001-greetings/rfc.toml",
+    "rfcs/0001-greetings/01-greeting.toml",
+    "rfcs/0001-greetings/02-farewell.toml",
+);
+
+/// The changes the diff of fixture 15-diff's base and head prints, one a line.
+const DIFF_EXPECTED: &str = include_str!("fixtures/15-diff/expected.txt");
+
+/// The failing findings of a fixture's expected findings as a diff prints them with the
+/// fixture's tree on `side`, `base` or `head`: each file's path after `<side>:`.
+fn with_side(side: &str, expected: &str) -> String {
+    let mut text = String::new();
+    for line in expected.lines().filter(|line| line.starts_with("error")) {
+        let line = line.replacen("] ", &format!("] {side}:"), 1);
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text
+}
+
+#[test]
+fn diff_lists_each_change_of_fixture_15() {
+    let (base, head) = (tree_of(DIFF_BASE), tree_of(DIFF_HEAD));
+    for tree in [&base, &head] {
+        let report = partimento::check_default(tree, &Options::default());
+        assert!(!report.failed(), "{}", lines(&report));
+    }
+    let changes = partimento::diff(&base, &head);
+    let changes = changes.expect("both trees pass the format rules");
+    assert_eq!(each_line(&changes), DIFF_EXPECTED);
+}
+
+#[test]
+fn each_change_of_fixture_15_holds_its_binds_to() {
+    let changes = partimento::diff(&tree_of(DIFF_BASE), &tree_of(DIFF_HEAD));
+    let changes = changes.expect("both trees pass the format rules");
+    let found: Vec<_> = changes
+        .iter()
+        .map(|c| (c.kind, c.requirement.as_str(), c.binds_to))
+        .collect();
+    let expected = [
+        (ChangeKind::Changed, "EX-0001-003", Binding::System),
+        (ChangeKind::Retired, "EX-0001-004", Binding::Process),
+        (ChangeKind::Added, "EX-0001-007", Binding::Process),
+        (ChangeKind::Added, "EX-0001-008", Binding::System),
+        (ChangeKind::Changed, "EX-0001-009", Binding::Process),
+        (ChangeKind::Changed, "EX-0001-010", Binding::System),
+    ];
+    assert_eq!(found, expected);
+}
+
+#[test]
+fn a_tree_against_itself_has_no_change() {
+    for files in [DIFF_BASE, DIFF_HEAD] {
+        let tree = tree_of(files);
+        let changes = partimento::diff(&tree, &tree);
+        let changes = changes.expect("the tree passes the format rules");
+        assert!(changes.is_empty(), "{}", each_line(&changes));
+    }
+}
+
+#[test]
+fn diff_of_a_failing_tree_returns_its_findings_after_its_side() {
+    let (failing, passing) = (tree(&FIXTURES[0]), tree_of(DIFF_BASE));
+    let expected = FIXTURES[0].expected;
+    let base = with_side("base", expected);
+    let head = with_side("head", expected);
+    assert_eq!(diff_findings(&failing, &passing), base);
+    assert_eq!(diff_findings(&passing, &failing), head);
+    assert_eq!(diff_findings(&failing, &failing), base + &head);
+    let findings = partimento::diff(&passing, &Tree::default());
+    let findings = findings.expect_err("a tree without spec.toml fails");
+    assert!(!findings.is_empty());
+    for finding in &findings {
+        assert_eq!(finding.file, "head:spec.toml", "{finding}");
+    }
+}
+
+/// The findings that the diff of `base` and `head` returns where a tree fails, as the command
+/// prints them, one a line.
+fn diff_findings(base: &Tree, head: &Tree) -> String {
+    let changes = partimento::diff(base, head);
+    each_line(&changes.expect_err("a tree fails the format rules"))
 }
 
 #[test]
@@ -174,7 +295,7 @@ mod binary {
     use std::path::{Path, PathBuf};
     use std::process::{Command, Output};
 
-    use super::{fails, FIXTURES};
+    use super::{fails, with_side, DIFF_EXPECTED, FIXTURES};
 
     fn root(name: &str) -> PathBuf {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -224,6 +345,54 @@ mod binary {
         let dir = root("no-such-fixture");
         let dir = dir.to_str().expect("the path is UTF-8");
         assert_eq!(run(&["check", "--root", dir]).status.code(), Some(2));
+    }
+
+    /// The directory of one side of fixture 15-diff, `base` or `head`.
+    fn diff_root(side: &str) -> String {
+        let dir = root("15-diff").join(side);
+        dir.to_str().expect("the path is UTF-8").to_string()
+    }
+
+    #[test]
+    fn diff_prints_the_changes_of_fixture_15() {
+        let (base, head) = (diff_root("base"), diff_root("head"));
+        let (base, head) = (base.as_str(), head.as_str());
+        let output = run(&["diff", base, head]);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), DIFF_EXPECTED);
+        assert_eq!(output.status.code(), Some(0));
+        let output = run(&["diff", base, head, "--format", "json"]);
+        let expected = include_str!("fixtures/15-diff/expected.json");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+        assert_eq!(output.status.code(), Some(0));
+        let output = run(&["diff", "--format", "json", base, base]);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "[]\n");
+        assert_eq!(output.status.code(), Some(0));
+    }
+
+    #[test]
+    fn diff_of_a_failing_tree_prints_its_findings_and_exits_with_1() {
+        let failing = root(FIXTURES[0].name);
+        let failing = failing.to_str().expect("the path is UTF-8");
+        let head = diff_root("head");
+        let output = run(&["diff", failing, head.as_str()]);
+        let expected = with_side("base", FIXTURES[0].expected);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+        assert_eq!(output.status.code(), Some(1));
+    }
+
+    #[test]
+    fn wrong_diff_arguments_exit_with_2() {
+        let (base, head) = (diff_root("base"), diff_root("head"));
+        let (base, head) = (base.as_str(), head.as_str());
+        let code = |args: &[&str]| run(args).status.code();
+        assert_eq!(code(&["diff"]), Some(2));
+        assert_eq!(code(&["diff", base]), Some(2));
+        assert_eq!(code(&["diff", base, head, head]), Some(2));
+        assert_eq!(code(&["diff", base, head, "--format", "yaml"]), Some(2));
+        assert_eq!(code(&["diff", base, head, "--final"]), Some(2));
+        let missing = root("no-such-fixture");
+        let missing = missing.to_str().expect("the path is UTF-8");
+        assert_eq!(code(&["diff", base, missing]), Some(2));
     }
 
     /// An empty directory under the build's temporary directory, for one test.
