@@ -877,11 +877,58 @@ mod tests {
         assert_eq!(parse(&unclosed).unwrap_err().offset, DEPTH + 1);
     }
 
+    /// A formula of `DEPTH` nested `at_least_one(` calls reads, prints, clones, drops and
+    /// encodes without overflowing the stack.
+    fn deep_calls<B: Backend + Default>() {
+        let text = format!("{}A{}", "at_least_one(A, ".repeat(DEPTH), ")".repeat(DEPTH));
+        let formula = parse(&text).unwrap();
+        let mut inner = &formula;
+        let mut ors = 0;
+        while let Formula::Or(parts) = inner {
+            assert_eq!(parts.len(), 2);
+            assert_eq!(parts[0], a("A"));
+            inner = &parts[1];
+            ors += 1;
+        }
+        assert_eq!(ors, DEPTH);
+        assert_eq!(*inner, a("A"));
+        let printed = format!("{}A{}", "(A | ".repeat(DEPTH), ")".repeat(DEPTH));
+        assert_eq!(formula.to_string(), printed);
+        assert_eq!(formula.clone().to_string(), printed);
+        let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+        assert!(sat(&mut encoding, &[("A", true)]));
+        assert!(!sat(&mut encoding, &[("A", false)]));
+    }
+
+    /// A chain of `DEPTH` implications, which groups to the right, reads, prints, clones, drops
+    /// and encodes without overflowing the stack.
+    fn deep_implications<B: Backend + Default>() {
+        let text = format!("{}!A", "A -> ".repeat(DEPTH));
+        let formula = parse(&text).unwrap();
+        let mut inner = &formula;
+        let mut implications = 0;
+        while let Formula::Implies(left, right) = inner {
+            assert_eq!(**left, a("A"));
+            inner = right;
+            implications += 1;
+        }
+        assert_eq!(implications, DEPTH);
+        assert_eq!(*inner, a("A").not());
+        let printed = format!("{}!A{}", "(A -> ".repeat(DEPTH), ")".repeat(DEPTH));
+        assert_eq!(formula.to_string(), printed);
+        assert_eq!(formula.clone().to_string(), printed);
+        let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+        assert!(!sat(&mut encoding, &[("A", true)]));
+        assert!(sat(&mut encoding, &[("A", false)]));
+    }
+
     crate::solver::backend_tests!(
         encoding_agrees_with_truth_tables,
         selectors_switch_formulas,
         empty_compositions,
         deep_negation,
         deep_parentheses,
+        deep_calls,
+        deep_implications,
     );
 }
