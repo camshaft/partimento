@@ -1,0 +1,183 @@
+//! The set's configuration, read from spec.toml at the root of the tree.
+//!
+//! The code holds none of these values: the identifier prefix, the paths, the levels, the RFC
+//! numbers of each system and of the contracts, and the implementation terms all come from the
+//! file.
+
+use std::ops::Range;
+
+use serde::Deserialize;
+use toml::Spanned;
+
+use crate::{source, Finding, Tree};
+
+/// The path of the configuration in the tree.
+pub const FILE: &str = "spec.toml";
+
+/// The rule of a configuration that is missing or holds a value the checks can't use.
+pub const RULE: &str = "config";
+
+/// The set's configuration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Config {
+    /// The prefix of each requirement identifier, such as `EX` in `EX-0001-001`.
+    pub prefix: String,
+    pub paths: Paths,
+    /// The key words of the statements, such as `MUST`, `SHOULD` and `MAY`.
+    pub levels: Vec<String>,
+    pub systems: Vec<System>,
+    /// The RFC numbers of the contracts between the systems.
+    pub contracts: Option<NumberRange>,
+    /// The terms that name how a system is built, which a statement names by their category
+    /// instead.
+    pub implementation_terms: Vec<String>,
+}
+
+/// The directories of the set, relative to the root of the tree.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Paths {
+    /// The RFC sources: the index and one directory for each RFC.
+    pub rfcs: String,
+    /// The rendered text of each section.
+    pub rendered: String,
+    /// The requirement file of each section that the tracing tool reads.
+    pub requirements: String,
+}
+
+/// A system and the RFC numbers it holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct System {
+    pub name: String,
+    pub rfcs: NumberRange,
+}
+
+/// The RFC numbers from `first` to `last`, both included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NumberRange {
+    pub first: u32,
+    pub last: u32,
+}
+
+impl NumberRange {
+    /// Whether the range holds the RFC number.
+    pub fn contains(&self, number: u32) -> bool {
+        self.first <= number && number <= self.last
+    }
+
+    fn overlaps(&self, other: &NumberRange) -> bool {
+        self.first <= other.last && other.first <= self.last
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Raw {
+    prefix: Spanned<String>,
+    paths: Paths,
+    levels: Spanned<Vec<String>>,
+    #[serde(default, rename = "system")]
+    systems: Vec<RawSystem>,
+    #[serde(default)]
+    contracts: Option<Spanned<NumberRange>>,
+    #[serde(default)]
+    implementation_terms: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSystem {
+    name: Spanned<String>,
+    first: u32,
+    last: u32,
+}
+
+impl RawSystem {
+    fn range(&self) -> NumberRange {
+        NumberRange {
+            first: self.first,
+            last: self.last,
+        }
+    }
+}
+
+fn system(raw: RawSystem) -> System {
+    System {
+        rfcs: raw.range(),
+        name: raw.name.into_inner(),
+    }
+}
+
+/// Reads the configuration from the tree, or adds the findings that say why it can't.
+pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
+    let Some(bytes) = tree.files.get(FILE) else {
+        let message = "spec.toml, the set's configuration, is missing from the tree's root";
+        findings.push(Finding::error(RULE, FILE, 1, None, message));
+        return None;
+    };
+    let text = source::text(FILE, bytes, findings)?;
+    let raw: Raw = source::parse(FILE, &text, findings)?;
+    let line = |span: Range<usize>| source::line_of(text.as_bytes(), span.start);
+    let before = findings.len();
+
+    let prefix = raw.prefix.get_ref();
+    if prefix.is_empty() || !prefix.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        let at = line(raw.prefix.span());
+        let message = format!("the prefix `{prefix}` isn't ASCII letters and digits");
+        findings.push(Finding::error(RULE, FILE, at, None, message));
+    }
+
+    let levels = raw.levels.get_ref();
+    let at = line(raw.levels.span());
+    if levels.is_empty() {
+        let message = "`levels` doesn't list a key word";
+        findings.push(Finding::error(RULE, FILE, at, None, message));
+    }
+    for (index, level) in levels.iter().enumerate() {
+        let uppercase = level.bytes().all(|byte| byte.is_ascii_uppercase());
+        if level.is_empty() || !uppercase || level == "NOT" {
+            let message = format!("the level `{level}` isn't an uppercase word other than NOT");
+            findings.push(Finding::error(RULE, FILE, at, None, message));
+        } else if levels[..index].contains(level) {
+            let message = format!("`levels` lists `{level}` twice");
+            findings.push(Finding::error(RULE, FILE, at, None, message));
+        }
+    }
+
+    let mut ranges = Vec::new();
+    for system in &raw.systems {
+        let name = format!("system `{}`", system.name.get_ref());
+        ranges.push((name, system.range(), line(system.name.span())));
+    }
+    if let Some(contracts) = &raw.contracts {
+        let name = "the contracts".to_string();
+        ranges.push((name, *contracts.get_ref(), line(contracts.span())));
+    }
+    for (index, (name, range, at)) in ranges.iter().enumerate() {
+        if range.first > range.last {
+            let (first, last) = (range.first, range.last);
+            let message = format!("the RFC numbers of {name} run from {first} down to {last}");
+            findings.push(Finding::error(RULE, FILE, *at, None, message));
+        }
+        for (other, other_range, _) in &ranges[..index] {
+            if range.overlaps(other_range) {
+                let message = format!("the RFC numbers of {name} overlap those of {other}");
+                findings.push(Finding::error(RULE, FILE, *at, None, message));
+            }
+        }
+    }
+    if findings.len() > before {
+        return None;
+    }
+
+    let systems = raw.systems.into_iter().map(system).collect();
+    Some(Config {
+        prefix: raw.prefix.into_inner(),
+        paths: raw.paths,
+        levels: raw.levels.into_inner(),
+        systems,
+        contracts: raw.contracts.map(Spanned::into_inner),
+        implementation_terms: raw.implementation_terms,
+    })
+}
