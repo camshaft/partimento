@@ -225,6 +225,46 @@ fn an_unless_forces_its_requirement_only_where_its_exception_is_false() {
     }
 }
 
+/// The text that `partimento render` writes for the section at [`GREETING`].
+const GREETING_TEXT: &str = "rendered/0001-greetings/01-greeting.md";
+
+/// The requirement file that `partimento render` writes for EX-0001-001 of [`GREETING`].
+const FIRST_REQUIREMENT: &str = ".duvet/requirements/0001-greetings/01-greeting/EX-0001-001.toml";
+
+/// Drift is checked wherever the format rules pass, though a check fails. Every other test here
+/// renders its tree first, so none of them finds drift.
+#[test]
+fn drift_is_checked_where_the_format_rules_pass_and_a_check_fails() {
+    // The fixture renders, and its formulas can't hold together.
+    let fixture = named("07-logic-conflict");
+    let generated = partimento::render(&tree(fixture)).expect("the format rules pass");
+    let mut sources = tree(fixture);
+    sources.files.extend(generated.files);
+    let conflict = [
+        ("unsatisfiable", GREETING, 8),
+        ("unsatisfiable", GREETING, 12),
+        ("unsatisfiable", GREETING, 15),
+    ];
+    // The section's text left out, and a requirement file edited by hand.
+    let mut missing = sources.clone();
+    assert!(missing.files.remove(GREETING_TEXT).is_some());
+    let mut edited = sources.clone();
+    let text = ByteVec::from("edited by hand\n".to_string());
+    let path = FIRST_REQUIREMENT.to_string();
+    assert!(edited.files.insert(path, text).is_some());
+    for (backend, check) in backends() {
+        let report = check(&sources, &Options::default());
+        assert_eq!(places(&report), conflict, "{backend}: {}", lines(&report));
+        for (changed, drift) in [(&missing, GREETING_TEXT), (&edited, FIRST_REQUIREMENT)] {
+            let report = check(changed, &Options::default());
+            let mut expected = vec![("drift", drift, 1)];
+            expected.extend(conflict);
+            assert_eq!(places(&report), expected, "{backend}: {}", lines(&report));
+            assert!(report.failed(), "{backend}");
+        }
+    }
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};
