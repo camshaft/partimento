@@ -1,0 +1,5 @@
+number = 204
+title = "Greetings"
+area = "front"
+abstract = "How the program greets a person when it starts."
+retired = ["ZQ-0204-004"]

@@ -1,0 +1,22 @@
+prefix = "ZQ"
+levels = ["SHALL", "OUGHT", "CAN"]
+implementation_terms = ["spreadsheet", "cron job"]
+
+[paths]
+rfcs = "docs/sources"
+rendered = "docs/text"
+requirements = "trace/requirements"
+
+[[system]]
+name = "front"
+first = 200
+last = 299
+
+[[system]]
+name = "back"
+first = 300
+last = 399
+
+[contracts]
+first = 900
+last = 949
