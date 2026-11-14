@@ -1,0 +1,5 @@
+target = "rendered/0002-farewells/01-farewell.md#EX-0002-001"
+
+[[spec]]
+level = "MAY"
+quote = "The program MAY print a farewell when it stops."

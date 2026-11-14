@@ -101,7 +101,9 @@ pub fn sections(set: &Set) -> Vec<Section<'_>> {
 
 /// A field's value where it is a string, and empty where it isn't there.
 fn string(field: Option<&Field>) -> &str {
-    field.and_then(|field| field.value.as_str()).unwrap_or_default()
+    field
+        .and_then(|field| field.value.as_str())
+        .unwrap_or_default()
 }
 
 /// The last part of a path, after its last `/`.

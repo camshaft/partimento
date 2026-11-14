@@ -1,0 +1,1 @@
+error[drift] rendered/0001-greetings/01-greeting.md:9: the file differs from what `partimento render` writes, from this line on

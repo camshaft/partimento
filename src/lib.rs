@@ -227,7 +227,9 @@ fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<(config::Config, mod
 
 /// Whether a finding fails the check.
 fn fails(findings: &[Finding]) -> bool {
-    findings.iter().any(|finding| finding.severity == Severity::Error)
+    findings
+        .iter()
+        .any(|finding| finding.severity == Severity::Error)
 }
 
 fn sort(findings: &mut [Finding]) {
