@@ -1,0 +1,27 @@
+[package]
+name = "partimento"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Checks and renders structured RFC specifications"
+license = "MIT"
+repository = "https://github.com/camshaft/partimento"
+readme = "README.md"
+
+[features]
+default = ["cli", "batsat"]
+# The command, src/main.rs.
+cli = []
+# The solver backends. Step 3 adds the backends themselves.
+batsat = []
+varisat = []
+
+[dependencies]
+etude-bytevec = "0.1"
+serde = { version = "1", features = ["derive"] }
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
+
+[[bin]]
+name = "partimento"
+path = "src/main.rs"
+required-features = ["cli"]

@@ -1,0 +1,35 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program SHOULD print a greeting when it starts."
+
+[[requirement]]
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the greeting once, and it MAY print it in color."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MUST"
+polarity = "forbidden"
+statement = "The program MUST NOT print a greeting to the error stream."
+
+[[requirement]]
+id = "EX-0001-004"
+level = "MUST"
+polarity = "forbidden"
+statement = "The program MUST print a greeting to the output stream."
+
+[[requirement]]
+id = "EX-0001-005"
+level = "SHOULD"
+polarity = "required"
+statement = "The program prints the time beside the greeting."

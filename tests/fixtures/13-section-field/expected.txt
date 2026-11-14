@@ -1,0 +1,2 @@
+error[section-field] rfcs/0001-greetings/01-greeting.toml:1: the section doesn't hold `problem`, one of `anchor`, `title`, `problem`, `motivation`
+error[section-field] rfcs/0001-greetings/02-farewell.toml:5: the section's `motivation` is empty
