@@ -519,7 +519,7 @@ fn json_origin(origin: &Origin) -> String {
     format!("{{\"requirement\":{requirement},\"file\":{file},\"line\":{line}}}")
 }
 
-/// A formula as a JSON object whose one key is its kind: `atom`, `not`, `and`, `or`, `implies`
+/// A formula as a JSON object whose one key is its kind: `atom`, `not`, `and`, `or`, `implies`,
 /// `iff` or `exactly_one`. It walks the formula with a stack on the heap, so a deep formula
 /// doesn't grow the call stack.
 fn json_formula(formula: &Formula) -> String {

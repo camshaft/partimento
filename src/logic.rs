@@ -251,7 +251,9 @@ impl PartialEq for Formula {
                     }
                 }
                 (Formula::Not(a), Formula::Not(b)) => pairs.push((&**a, &**b)),
-                (Formula::And(a), Formula::And(b)) | (Formula::Or(a), Formula::Or(b)) => {
+                (Formula::And(a), Formula::And(b))
+                | (Formula::Or(a), Formula::Or(b))
+                | (Formula::ExactlyOne(a), Formula::ExactlyOne(b)) => {
                     if a.len() != b.len() {
                         return false;
                     }
@@ -346,6 +348,9 @@ impl fmt::Debug for Formula {
                         Formula::Not(part) => ("Not", Step::Formula(part, inner), None),
                         Formula::And(parts) => ("And", Step::List(parts, inner), None),
                         Formula::Or(parts) => ("Or", Step::List(parts, inner), None),
+                        Formula::ExactlyOne(parts) => {
+                            ("ExactlyOne", Step::List(parts, inner), None)
+                        }
                         Formula::Implies(a, b) => {
                             let b = Step::Formula(b, inner);
                             ("Implies", Step::Formula(a, inner), Some(b))
@@ -908,6 +913,7 @@ mod tests {
         Not(Box<Derived>),
         And(Vec<Derived>),
         Or(Vec<Derived>),
+        ExactlyOne(Vec<Derived>),
         Implies(Box<Derived>, Box<Derived>),
         Iff(Box<Derived>, Box<Derived>),
     }
@@ -920,6 +926,7 @@ mod tests {
             Formula::Not(part) => Derived::Not(Box::new(derived(part))),
             Formula::And(parts) => Derived::And(parts.iter().map(derived).collect()),
             Formula::Or(parts) => Derived::Or(parts.iter().map(derived).collect()),
+            Formula::ExactlyOne(parts) => Derived::ExactlyOne(parts.iter().map(derived).collect()),
             Formula::Implies(a, b) => Derived::Implies(Box::new(derived(a)), Box::new(derived(b))),
             Formula::Iff(a, b) => Derived::Iff(Box::new(derived(a)), Box::new(derived(b))),
         }
@@ -941,6 +948,8 @@ mod tests {
             Formula::And(vec![a("A"), a("B"), a("C")]),
             Formula::Or(vec![a("A"), a("B")]),
             Formula::Or(vec![a("A"), Formula::And(vec![a("B"), a("C").not()])]),
+            Formula::ExactlyOne(Vec::new()),
+            Formula::ExactlyOne(vec![a("A"), a("B")]),
             a("A").implies(a("B")),
             a("B").implies(a("A")),
             a("A").iff(a("B")),
