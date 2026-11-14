@@ -1,6 +1,6 @@
 //! The format rules: the form, uniqueness and retirement of identifiers, the key word of each
-//! statement, the fields of sections and requirement blocks, and the implementation terms a
-//! statement names.
+//! statement, the fields of sections and requirement blocks, the form of a section's anchor and
+//! title, which its rendered heading holds, and the implementation terms a statement names.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use toml::Value;
 
 use crate::config::Config;
-use crate::model::{Block, Section, Set};
+use crate::model::{Block, Field, Section, Set};
 use crate::Finding;
 
 /// An identifier that isn't of the form `<prefix>-<rfc>-<n>`.
@@ -27,6 +27,12 @@ pub const FIELD_MISSING: &str = "field-missing";
 pub const FIELD_VALUE: &str = "field-value";
 /// A section without its anchor, title, problem or motivation.
 pub const SECTION_FIELD: &str = "section-field";
+/// A section anchor that holds a character other than ASCII letters, digits, `-` and `_`: the
+/// rendered heading writes the anchor as written in its explicit anchor `{#<anchor>}`, which
+/// white space, a brace or a line break would break.
+pub const ANCHOR_FORM: &str = "anchor-form";
+/// A section title that holds a line break, which the rendered heading, one line, can't hold.
+pub const TITLE_FORM: &str = "title-form";
 /// A statement that names a term of spec.toml's `implementation_terms`.
 pub const IMPLEMENTATION_TERM: &str = "implementation-term";
 /// A relation whose target no requirement holds yet; `Options::final_pass` makes it fail.
@@ -53,6 +59,11 @@ const REQUIRED_SECTION_FIELDS: &[&str] = &["anchor", "title", "problem", "motiva
 const POLARITIES: &[&str] = &["required", "forbidden"];
 const COMPOSITIONS: &[&str] = &["atomic", "all_of", "any_of", "exactly_one", "unless"];
 const BINDINGS: &[&str] = &["system", "process"];
+/// The message of an `anchor-form` finding; it doesn't quote the anchor, which may hold a line
+/// break.
+const ANCHOR_MESSAGE: &str =
+    "the anchor holds a character other than ASCII letters, digits, `-` and `_`";
+const TITLE_MESSAGE: &str = "the title holds a line break, and a heading is one line";
 
 /// Where each identifier is held or retired: a file and a line.
 type Places<'a> = BTreeMap<&'a str, (&'a str, u32)>;
@@ -151,6 +162,14 @@ fn check_section(section: &Section, findings: &mut Vec<Finding>) {
             let message = format!("the section's `{key}` is empty");
             place.error(SECTION_FIELD, field.line, message);
         }
+    }
+    let anchor = section.field("anchor");
+    if let Some(field) = anchor.filter(|field| !is_anchor(string(field))) {
+        place.error(ANCHOR_FORM, field.line, ANCHOR_MESSAGE.to_string());
+    }
+    let title = section.field("title");
+    if let Some(field) = title.filter(|field| holds_line_break(string(field))) {
+        place.error(TITLE_FORM, field.line, TITLE_MESSAGE.to_string());
     }
 }
 
@@ -281,6 +300,23 @@ fn is_blank(value: &Value) -> bool {
     value.as_str().is_some_and(|text| text.trim().is_empty())
 }
 
+/// The field's value where it is a string, and the empty string where it isn't.
+fn string(field: &Field) -> &str {
+    field.value.as_str().unwrap_or_default()
+}
+
+/// Whether the anchor holds ASCII letters, digits, `-` and `_` alone: the rendered heading writes
+/// it as written in its explicit anchor `{#<anchor>}`.
+fn is_anchor(anchor: &str) -> bool {
+    let allowed = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_';
+    anchor.bytes().all(allowed)
+}
+
+/// Whether the title, trimmed as the rendered heading trims it, holds a line break.
+fn holds_line_break(title: &str) -> bool {
+    title.trim().contains(['\n', '\r'])
+}
+
 /// The RFC number and the requirement number of an identifier `<prefix>-<rfc>-<n>`, with `<rfc>`
 /// four digits and `<n>` three digits or more.
 pub fn parse_identifier(prefix: &str, id: &str) -> Option<(u32, u32)> {
@@ -330,4 +366,52 @@ fn names(statement: &str, term: &str) -> bool {
 fn list(items: &[&str]) -> String {
     let items: Vec<String> = items.iter().map(|item| format!("`{item}`")).collect();
     items.join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_anchor_is_ascii_letters_digits_hyphens_and_underscores() {
+        for anchor in ["waking", "HT-1002-012", "a_b", "2-ways"] {
+            assert!(is_anchor(anchor), "{anchor:?}");
+        }
+        let refused = [
+            "two words",
+            "tab\there",
+            "reply}",
+            "{reply",
+            "a\\b",
+            "a<b",
+            "a#b",
+            "a.b",
+            "caf\u{e9}",
+            "line\nbreak",
+        ];
+        for anchor in refused {
+            assert!(!is_anchor(anchor), "{anchor:?}");
+        }
+    }
+
+    #[test]
+    fn a_title_holds_a_line_break_only_inside_its_trimmed_text() {
+        assert!(holds_line_break("Saying\nhello"));
+        assert!(holds_line_break("Saying\rhello"));
+        for title in ["Saying hello\n", "\nSaying hello", "Saying hello"] {
+            assert!(!holds_line_break(title), "{title:?}");
+        }
+    }
+
+    #[test]
+    fn a_value_that_isnt_a_string_breaks_neither_form() {
+        let field = Field {
+            key: "anchor".to_string(),
+            line: 2,
+            value: Value::Integer(5),
+        };
+        assert_eq!(string(&field), "");
+        assert!(is_anchor(string(&field)));
+        assert!(!holds_line_break(string(&field)));
+    }
 }

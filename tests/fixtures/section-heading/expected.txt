@@ -1,0 +1,4 @@
+error[anchor-form] rfcs/0001-greetings/02-spaced.toml:2: the anchor holds a character other than ASCII letters, digits, `-` and `_`
+error[title-form] rfcs/0001-greetings/02-spaced.toml:3: the title holds a line break, and a heading is one line
+error[anchor-form] rfcs/0001-greetings/03-brace.toml:2: the anchor holds a character other than ASCII letters, digits, `-` and `_`
+error[title-form] rfcs/0001-greetings/03-brace.toml:3: the title holds a line break, and a heading is one line

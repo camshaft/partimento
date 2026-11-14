@@ -1,0 +1,11 @@
+[section]
+anchor = "reply}"
+title = "Reply\ragain"
+problem = "A person who answers the greeting doesn't know that the program read the answer."
+motivation = "A reply tells the person that the program read their answer."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print a reply when the person answers."
