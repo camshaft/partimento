@@ -5,9 +5,14 @@
 //! into clauses by the Tseitin transform, and gives each formula a selector literal, so that the
 //! formula holds only where its selector is assumed true.
 //!
-//! The parser and each walk of a formula, its clone, drop, display and encoding, keep their own
-//! stack on the heap, so a formula may nest as deep as memory allows. The derived comparison,
-//! debug output and serialization of a formula still recurse once for each level.
+//! The parser and each walk of a formula, its clone, drop, comparison, debug output, display and
+//! encoding, keep their own stack on the heap, so a formula may nest as deep as memory allows.
+//!
+//! serde derives the serialization, in the shape a host reads as JSON, and it still recurses once
+//! for each level of nesting. Each method of serde's `Serializer` that writes a nested value, such
+//! as `serialize_newtype_variant` for the part of `Not` and `SerializeSeq::serialize_element` for
+//! each part of `And`, is handed that value as a `&T` with `T: Serialize` and serializes it before
+//! it returns, so a `Serialize` written by hand would make the same nested calls.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -19,7 +24,10 @@ use serde::Serialize;
 use crate::solver::{Answer, Backend, Lit};
 
 /// A formula over requirement identifiers.
-#[derive(Debug, PartialEq, Eq, Serialize)]
+///
+/// Its comparison and debug output are written by hand, below, each with a stack on the heap;
+/// serde derives its serialization, as the module's documentation says.
+#[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Formula {
     /// A requirement identifier, or a condition's atom.
@@ -218,6 +226,136 @@ impl fmt::Display for Formula {
                 Step::Part(Formula::Iff(a, b)) => {
                     f.write_str("(")?;
                     pair(&mut steps, a, b, " <-> ");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PartialEq for Formula {
+    /// Compares as `#[derive(PartialEq)]` does: the same variant, the same name of an atom, and
+    /// parts that compare equal, in order. The pairs still to compare wait on a stack on the
+    /// heap, so a formula may nest as deep as memory allows.
+    fn eq(&self, other: &Formula) -> bool {
+        let mut pairs = vec![(self, other)];
+        while let Some(pair) = pairs.pop() {
+            match pair {
+                (Formula::Atom(a), Formula::Atom(b)) => {
+                    if a != b {
+                        return false;
+                    }
+                }
+                (Formula::Not(a), Formula::Not(b)) => pairs.push((&**a, &**b)),
+                (Formula::And(a), Formula::And(b)) | (Formula::Or(a), Formula::Or(b)) => {
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    pairs.extend(a.iter().zip(b).rev());
+                }
+                (Formula::Implies(a, c), Formula::Implies(b, d))
+                | (Formula::Iff(a, c), Formula::Iff(b, d)) => {
+                    pairs.push((&**c, &**d));
+                    pairs.push((&**a, &**b));
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
+impl Eq for Formula {}
+
+impl fmt::Debug for Formula {
+    /// Writes what `#[derive(Debug)]` writes, in `{:#?}` as in `{:?}`. The steps still to write
+    /// wait on a stack on the heap, the next one last, so a formula may nest as deep as memory
+    /// allows.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        /// A step of the output: a formula or the list of a composition's parts, each with the
+        /// depth of its indent in `{:#?}`, an atom's name, a text, or the indent of a depth.
+        #[derive(Clone, Copy)]
+        enum Step<'a> {
+            Formula(&'a Formula, usize),
+            List(&'a [Formula], usize),
+            Name(&'a str),
+            Text(&'static str),
+            Indent(usize),
+        }
+
+        /// Pushes the steps that write `fields` in parentheses, as `debug_tuple` writes them,
+        /// after the name of a variant at `depth`.
+        fn tuple<'a>(steps: &mut Vec<Step<'a>>, pretty: bool, depth: usize, fields: &[Step<'a>]) {
+            steps.push(Step::Text(")"));
+            if pretty {
+                steps.push(Step::Indent(depth));
+                for &field in fields.iter().rev() {
+                    steps.extend([Step::Text(",\n"), field, Step::Indent(depth + 1)]);
+                }
+                steps.push(Step::Text("(\n"));
+            } else {
+                for (i, &field) in fields.iter().enumerate().rev() {
+                    steps.push(field);
+                    if i > 0 {
+                        steps.push(Step::Text(", "));
+                    }
+                }
+                steps.push(Step::Text("("));
+            }
+        }
+
+        let pretty = f.alternate();
+        let mut steps = vec![Step::Formula(self, 0)];
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Text(text) => f.write_str(text)?,
+                Step::Indent(depth) => {
+                    for _ in 0..depth {
+                        f.write_str("    ")?;
+                    }
+                }
+                Step::Name(name) => fmt::Debug::fmt(name, f)?,
+                Step::List(parts, depth) => {
+                    // As `debug_list` writes its entries: `[]` where the list is empty.
+                    steps.push(Step::Text("]"));
+                    if pretty && !parts.is_empty() {
+                        steps.push(Step::Indent(depth));
+                        for part in parts.iter().rev() {
+                            let part = Step::Formula(part, depth + 1);
+                            steps.extend([Step::Text(",\n"), part, Step::Indent(depth + 1)]);
+                        }
+                        steps.push(Step::Text("[\n"));
+                    } else {
+                        for (i, part) in parts.iter().enumerate().rev() {
+                            steps.push(Step::Formula(part, depth + 1));
+                            if i > 0 {
+                                steps.push(Step::Text(", "));
+                            }
+                        }
+                        steps.push(Step::Text("["));
+                    }
+                }
+                Step::Formula(formula, depth) => {
+                    let inner = depth + 1;
+                    let (name, first, second) = match formula {
+                        Formula::Atom(name) => ("Atom", Step::Name(name), None),
+                        Formula::Not(part) => ("Not", Step::Formula(part, inner), None),
+                        Formula::And(parts) => ("And", Step::List(parts, inner), None),
+                        Formula::Or(parts) => ("Or", Step::List(parts, inner), None),
+                        Formula::Implies(a, b) => {
+                            let b = Step::Formula(b, inner);
+                            ("Implies", Step::Formula(a, inner), Some(b))
+                        }
+                        Formula::Iff(a, b) => {
+                            let b = Step::Formula(b, inner);
+                            ("Iff", Step::Formula(a, inner), Some(b))
+                        }
+                    };
+                    f.write_str(name)?;
+                    match second {
+                        Some(second) => tuple(&mut steps, pretty, depth, &[first, second]),
+                        None => tuple(&mut steps, pretty, depth, &[first]),
+                    }
                 }
             }
         }
@@ -678,6 +816,64 @@ mod tests {
         Formula::atom(name)
     }
 
+    /// `Formula`'s variants, with the comparison and the debug output that `#[derive]` writes,
+    /// to check the ones `Formula` writes by hand against.
+    #[derive(Debug, PartialEq)]
+    enum Derived {
+        Atom(String),
+        Not(Box<Derived>),
+        And(Vec<Derived>),
+        Or(Vec<Derived>),
+        Implies(Box<Derived>, Box<Derived>),
+        Iff(Box<Derived>, Box<Derived>),
+    }
+
+    /// `formula` as a `Derived`. It recurses once for each level, so it reads shallow formulas
+    /// alone.
+    fn derived(formula: &Formula) -> Derived {
+        match formula {
+            Formula::Atom(name) => Derived::Atom(name.clone()),
+            Formula::Not(part) => Derived::Not(Box::new(derived(part))),
+            Formula::And(parts) => Derived::And(parts.iter().map(derived).collect()),
+            Formula::Or(parts) => Derived::Or(parts.iter().map(derived).collect()),
+            Formula::Implies(a, b) => Derived::Implies(Box::new(derived(a)), Box::new(derived(b))),
+            Formula::Iff(a, b) => Derived::Iff(Box::new(derived(a)), Box::new(derived(b))),
+        }
+    }
+
+    /// Shallow formulas of each variant compare, and debug-print in `{:?}` and in `{:#?}`, alone
+    /// and as an entry of a list, as the derived implementations write them.
+    #[test]
+    fn comparison_and_debug_output_are_the_derived_ones() {
+        let formulas = [
+            a("A"),
+            a("B"),
+            a("say \"hi\"\n"),
+            a("A").not(),
+            a("B").not(),
+            Formula::And(Vec::new()),
+            Formula::Or(Vec::new()),
+            Formula::And(vec![a("A"), a("B")]),
+            Formula::And(vec![a("A"), a("B"), a("C")]),
+            Formula::Or(vec![a("A"), a("B")]),
+            Formula::Or(vec![a("A"), Formula::And(vec![a("B"), a("C").not()])]),
+            a("A").implies(a("B")),
+            a("B").implies(a("A")),
+            a("A").iff(a("B")),
+            a("A").implies(a("B").iff(Formula::Or(Vec::new()))),
+            parse("exactly_one(A, B, C) <-> !(D -> E)").unwrap(),
+        ];
+        for x in &formulas {
+            let expected = derived(x);
+            assert_eq!(format!("{x:?}"), format!("{expected:?}"));
+            assert_eq!(format!("{x:#?}"), format!("{expected:#?}"));
+            assert_eq!(format!("{:#?}", [x]), format!("{:#?}", [&expected]));
+            for y in &formulas {
+                assert_eq!(x == y, expected == derived(y), "{x} and {y}");
+            }
+        }
+    }
+
     #[test]
     fn precedence() {
         assert_eq!(
@@ -856,8 +1052,8 @@ mod tests {
     /// The nesting of the deep formulas' tests.
     const DEPTH: usize = 100_000;
 
-    /// A formula of `DEPTH` nested `!` reads, prints, clones, drops and encodes without
-    /// overflowing the stack.
+    /// A formula of `DEPTH` nested `!` reads, prints, debug-prints, compares, clones, drops and
+    /// encodes without overflowing the stack.
     fn deep_negation<B: Backend + Default>() {
         let text = format!("{}A", "!".repeat(DEPTH));
         let formula = parse(&text).unwrap();
@@ -871,13 +1067,18 @@ mod tests {
         assert_eq!(*inner, a("A"));
         assert_eq!(formula.to_string(), text);
         assert_eq!(formula.clone().to_string(), text);
+        assert!(formula == parse(&text).unwrap());
+        assert!(formula != parse(&text[1..]).unwrap());
+        assert!(formula != parse(&format!("{}B", "!".repeat(DEPTH))).unwrap());
+        let debug = format!("{}Atom(\"A\"){}", "Not(".repeat(DEPTH), ")".repeat(DEPTH));
+        assert_eq!(format!("{formula:?}"), debug);
         let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
         assert!(sat(&mut encoding, &[("A", true)]));
         assert!(!sat(&mut encoding, &[("A", false)]));
     }
 
-    /// A formula of `DEPTH` nested parentheses reads, prints, clones, drops and encodes
-    /// without overflowing the stack, and so do bare and unclosed parentheses.
+    /// A formula of `DEPTH` nested parentheses reads, prints, debug-prints, compares, clones,
+    /// drops and encodes without overflowing the stack, and so do bare and unclosed parentheses.
     fn deep_parentheses<B: Backend + Default>() {
         let text = format!("{}A{}", "(A & ".repeat(DEPTH), ")".repeat(DEPTH));
         let formula = parse(&text).unwrap();
@@ -893,6 +1094,12 @@ mod tests {
         assert_eq!(*inner, a("A"));
         assert_eq!(formula.to_string(), text);
         assert_eq!(formula.clone().to_string(), text);
+        assert!(formula == parse(&text).unwrap());
+        let last = format!("{}B{}", "(A & ".repeat(DEPTH), ")".repeat(DEPTH));
+        assert!(formula != parse(&last).unwrap());
+        let and = "And([Atom(\"A\"), ".repeat(DEPTH);
+        let debug = format!("{and}Atom(\"A\"){}", "])".repeat(DEPTH));
+        assert_eq!(format!("{formula:?}"), debug);
         let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
         assert!(sat(&mut encoding, &[("A", true)]));
         assert!(!sat(&mut encoding, &[("A", false)]));
