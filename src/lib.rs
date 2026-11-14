@@ -150,6 +150,12 @@ pub trait Cache {
 
     /// Keeps the artifact under the key.
     fn put(&self, key: Key, artifact: ByteVec);
+
+    /// Whether the cache keeps the artifacts it is handed, true unless the cache answers false. A
+    /// check doesn't build an artifact's key or its encoding for a cache that doesn't keep them.
+    fn keeps(&self) -> bool {
+        true
+    }
 }
 
 /// The cache that keeps nothing: every artifact is built each time.
@@ -162,6 +168,10 @@ impl Cache for NoCache {
     }
 
     fn put(&self, _key: Key, _artifact: ByteVec) {}
+
+    fn keeps(&self) -> bool {
+        false
+    }
 }
 
 /// Checks the tree with the solver backend `B`.

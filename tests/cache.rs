@@ -7,7 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
-use partimento::{ByteVec, Cache, Finding, Key, Options, Report, Tree};
+use partimento::{ByteVec, Cache, Finding, Key, NoCache, Options, Report, Tree};
 
 /// The backend each check of these tests checks with.
 type Backend = partimento::solver::FormatOnly;
@@ -72,6 +72,27 @@ impl Cache for Damaged {
 
     fn put(&self, key: Key, artifact: ByteVec) {
         self.kept.put(key, artifact);
+    }
+}
+
+/// A cache that doesn't keep artifacts, and counts the calls a check makes to its `get` and `put`.
+#[derive(Default)]
+struct Forgetful {
+    calls: Cell<usize>,
+}
+
+impl Cache for Forgetful {
+    fn get(&self, _key: &Key) -> Option<ByteVec> {
+        self.calls.set(self.calls.get() + 1);
+        None
+    }
+
+    fn put(&self, _key: Key, _artifact: ByteVec) {
+        self.calls.set(self.calls.get() + 1);
+    }
+
+    fn keeps(&self) -> bool {
+        false
     }
 }
 
@@ -168,6 +189,15 @@ fn a_damaged_artifact_is_read_from_the_file_again() {
         assert_eq!(cached(&tree, &cache), expected);
         assert_eq!(cache.kept.returned.get(), 2);
     }
+}
+
+#[test]
+fn a_cache_that_doesnt_keep_artifacts_isnt_asked_for_one() {
+    let (tree, cache) = (fixture(), Forgetful::default());
+    assert_eq!(cached(&tree, &cache), uncached(&tree));
+    assert_eq!(cache.calls.get(), 0);
+    assert!(!NoCache.keeps());
+    assert!(Memory::default().keeps());
 }
 
 #[cfg(feature = "cli")]
