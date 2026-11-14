@@ -10,7 +10,7 @@ use serde::Deserialize;
 use toml::Spanned;
 
 use crate::config::Config;
-use crate::{source, ByteVec, Finding, Tree};
+use crate::{artifact, source, ByteVec, Cache, Finding, NoCache, Tree};
 
 /// The name of the RFC index in the RFCs' directory.
 pub const INDEX: &str = "index.toml";
@@ -102,7 +102,7 @@ pub struct Source {
 }
 
 /// One section file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Section {
     /// The file's path in the tree.
     pub file: String,
@@ -115,7 +115,7 @@ pub struct Section {
 }
 
 /// One `[[requirement]]` block of a section file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Block {
     /// The line of the block's `[[requirement]]` header.
     pub line: u32,
@@ -182,6 +182,17 @@ struct RawMeta {
 /// Reads the RFCs from the tree, adding a finding for each file that is missing, misnamed or
 /// doesn't parse.
 pub fn load(tree: &Tree, config: &Config, findings: &mut Vec<Finding>) -> Set {
+    load_cached(tree, config, &NoCache, findings)
+}
+
+/// Reads the RFCs from the tree as `load` does, and each section file's load from `cache` where
+/// the cache keeps it, keeping there the load of each section file it reads from the tree.
+pub(crate) fn load_cached<C: Cache>(
+    tree: &Tree,
+    config: &Config,
+    cache: &C,
+    findings: &mut Vec<Finding>,
+) -> Set {
     let root = format!("{}/", config.paths.rfcs);
     let index = format!("{root}{INDEX}");
     let mut set = Set::default();
@@ -239,7 +250,8 @@ pub fn load(tree: &Tree, config: &Config, findings: &mut Vec<Finding>) -> Set {
                 has_meta = true;
                 rfc.meta = load_meta(&file, bytes, number, findings);
             } else if is_section_name(name) {
-                rfc.sections.extend(load_section(&file, bytes, findings));
+                let section = cached_section(&file, bytes, cache, findings);
+                rfc.sections.extend(section);
             } else {
                 let message = "the file isn't rfc.toml or a section file named <nn>-<slug>.toml";
                 findings.push(Finding::error(LAYOUT, &file, 1, None, message));
@@ -315,6 +327,28 @@ fn load_meta(
         sources: raw.sources,
         retired,
     })
+}
+
+/// A section file's load: its section where the file parses, and the findings its read reports,
+/// which it adds to `findings`. It reads the load from `cache` where the cache keeps one for the
+/// file's path and bytes, and otherwise reads the file and keeps its load in `cache`.
+fn cached_section<C: Cache>(
+    file: &str,
+    bytes: &ByteVec,
+    cache: &C,
+    findings: &mut Vec<Finding>,
+) -> Option<Section> {
+    let key = artifact::section_key(file, bytes);
+    let kept = cache.get(&key);
+    if let Some((found, section)) = kept.as_ref().and_then(artifact::decode_section) {
+        findings.extend(found);
+        return section;
+    }
+    let mut found = Vec::new();
+    let section = load_section(file, bytes, &mut found);
+    cache.put(key, artifact::encode_section(&found, section.as_ref()));
+    findings.extend(found);
+    section
 }
 
 fn load_section(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Option<Section> {
