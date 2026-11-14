@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/camshaft/partimento/compare/v0.2.0...v0.3.0) - 2026-11-14
+
+### Other
+
+- Reword two messages, three doc comments and fixture 24's RFC 0100 ([#64](https://github.com/camshaft/partimento/pull/64))
+- Write a formula set's JSON for library hosts with a stack on the heap ([#59](https://github.com/camshaft/partimento/pull/59))
+- Test the exactly_one key of check --formulas ([#63](https://github.com/camshaft/partimento/pull/63))
+- Test the empty exactly_one in empty_compositions ([#62](https://github.com/camshaft/partimento/pull/62))
+- Test the names of an exactly_one call's parts ([#61](https://github.com/camshaft/partimento/pull/61))
+- Encode exactly_one in clauses linear in its parts ([#55](https://github.com/camshaft/partimento/pull/55))
+
 ## [0.2.0](https://github.com/camshaft/partimento/compare/v0.1.0...v0.2.0) - 2026-11-14
 
 ### Other
