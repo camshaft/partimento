@@ -13,7 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use toml::Value;
 
 use crate::config::Config;
-use crate::logic::{parse, Condition, Encoding, Entry, Formula, FormulaSet, Origin};
+use crate::logic::{
+    parse, Atom, Condition, Encoding, Entry, Formula, FormulaSet, Origin, Relation,
+};
 use crate::model::{Block, Field, Set, State};
 use crate::rules::{parse_identifier, RELATION_UNRESOLVED};
 use crate::solver::{Answer, Backend, Lit};
@@ -51,19 +53,24 @@ const RELATION_KINDS: &[&str] = &[
 const BOUNDS: &[&str] = &["min", "max", "exact"];
 
 /// Adds a finding for each of checks 1 to 5 that the set breaks, solving with a backend of type
-/// `B`.
-pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
-    check_cached::<B, _>(config, set, &NoCache, findings);
+/// `B`, and returns the formula set checks 1 and 2 read, with each of its atoms.
+pub fn check<B: Backend + Default>(
+    config: &Config,
+    set: &Set,
+    findings: &mut Vec<Finding>,
+) -> FormulaSet {
+    check_cached::<B, _>(config, set, &NoCache, findings)
 }
 
 /// Adds a finding for each of checks 1 to 5 that the set breaks, as [`check`] does, reading the
-/// result of checks 1 and 2 from `cache` where it keeps one for the set's formulas.
+/// result of checks 1 and 2 from `cache` where it keeps one for the set's formulas, and returns
+/// the formula set checks 1 and 2 read, with each of its atoms.
 pub(crate) fn check_cached<B: Backend + Default, C: Cache>(
     config: &Config,
     set: &Set,
     cache: &C,
     findings: &mut Vec<Finding>,
-) {
+) -> FormulaSet {
     let mut cx = Context::new(config, set);
     cx.supersede();
     cx.compositions();
@@ -80,6 +87,8 @@ pub(crate) fn check_cached<B: Backend + Default, C: Cache>(
     cx.polarity();
     cx.solve::<B, _>(cache);
     findings.append(&mut cx.found);
+    cx.atoms();
+    cx.set
 }
 
 /// One requirement of the set, where its block holds an identifier.
@@ -298,11 +307,24 @@ impl<'a> Context<'a> {
             }
             self.boundary(r, target, noun, line);
             let (own, other) = (Formula::atom(r.id), Formula::atom(target));
+            let formula = if kind == "conflicts_with" {
+                Formula::And(vec![own, other]).not()
+            } else {
+                own.implies(other)
+            };
+            let origin = origin(r, line);
+            let relation = Some(Relation {
+                kind: kind.to_owned(),
+                target: target.to_owned(),
+            });
+            self.set.formulas.push(Entry {
+                formula,
+                origin,
+                relation,
+            });
             if kind == "conflicts_with" {
-                self.push(Formula::And(vec![own, other]).not(), r, line);
                 continue;
             }
-            self.push(own.implies(other), r, line);
             self.leads.entry(r.id).or_default().insert(target);
             if kind != "depends_on" {
                 self.cycle.entry(r.id).or_default().insert(target);
@@ -457,6 +479,31 @@ impl<'a> Context<'a> {
             return Some(self.requirements[index].rfc);
         }
         parse_identifier(&self.config.prefix, id).map(|(rfc, _)| rfc)
+    }
+
+    /// Adds to the formula set each atom of its formulas and its conditions, with the RFC, the
+    /// section file, the level and the polarity of the requirement that holds it.
+    fn atoms(&mut self) {
+        let mut names = BTreeSet::new();
+        for entry in &self.set.formulas {
+            names_of(&entry.formula, &mut names);
+        }
+        for condition in &self.set.conditions {
+            names.insert(condition.atom.clone());
+        }
+        for id in names {
+            let index = self.held.get(id.as_str()).copied();
+            let held = index.map(|index| self.requirements[index]);
+            let text = |key: &str| held.and_then(|r| r.block.text(key)).map(str::to_owned);
+            let atom = Atom {
+                rfc: self.rfc_of(&id),
+                section: held.map(|r| r.file.to_owned()),
+                level: text("level"),
+                polarity: text("polarity"),
+                id,
+            };
+            self.set.atoms.push(atom);
+        }
     }
 
     /// Adds a finding for each cycle of `implies` and `refines` relations.
@@ -639,7 +686,12 @@ impl<'a> Context<'a> {
 
     fn push(&mut self, formula: Formula, r: Requirement<'a>, line: u32) {
         let origin = origin(r, line);
-        self.set.formulas.push(Entry { formula, origin });
+        let relation = None;
+        self.set.formulas.push(Entry {
+            formula,
+            origin,
+            relation,
+        });
     }
 
     fn error(&mut self, rule: &str, r: Requirement<'a>, line: u32, message: String) {
@@ -1011,6 +1063,7 @@ mod tests {
             .map(|(index, text)| Entry {
                 formula: parse(text).unwrap(),
                 origin: origin(&format!("EX-{}", index + 1)),
+                relation: None,
             })
             .collect();
         let conditions = conditions
@@ -1021,6 +1074,7 @@ mod tests {
             })
             .collect();
         FormulaSet {
+            atoms: Vec::new(),
             formulas,
             conditions,
         }
