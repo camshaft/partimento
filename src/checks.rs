@@ -227,9 +227,8 @@ impl<'a> Context<'a> {
         match compose {
             Some(kind @ ("all_of" | "any_of" | "exactly_one")) => {
                 if parts.is_empty() {
-                    let message = format!(
-                        "`{kind}` has no part: `parts` lists the requirements it composes"
-                    );
+                    let message =
+                        format!("`{kind}` has no part: `parts` lists the requirements it composes");
                     self.error(COMPOSITION, r, compose_line, message);
                 } else {
                     for &part in &parts {
