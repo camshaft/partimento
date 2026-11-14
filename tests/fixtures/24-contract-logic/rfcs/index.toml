@@ -2,16 +2,13 @@
 number = 1
 title = "Greetings"
 area = "platform"
-state = "written"
 
 [[rfc]]
 number = 100
 title = "Transfer"
 area = "contracts"
-state = "written"
 
 [[rfc]]
 number = 200
 title = "Scheduling"
 area = "orchestration"
-state = "written"

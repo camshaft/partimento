@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::logic::{
     parse, Atom, Condition, Encoding, Entry, Formula, FormulaSet, Origin, Relation,
 };
-use crate::model::{Block, Field, Set, State};
+use crate::model::{Block, Field, Set};
 use crate::rules::{parse_identifier, RELATION_UNRESOLVED};
 use crate::solver::{Answer, Backend, Lit};
 use crate::{artifact, Cache, Finding, NoCache};
@@ -127,7 +127,7 @@ struct Context<'a> {
     held: BTreeMap<&'a str, usize>,
     /// Where each identifier is retired.
     retired: BTreeMap<&'a str, (&'a str, u32)>,
-    /// The RFCs that the index plans.
+    /// The RFCs that the index plans: those it lists without a directory in the set.
     planned: BTreeSet<u32>,
     /// The requirements that a composition holds as its parts, or as its exception.
     parts: BTreeSet<&'a str>,
@@ -159,8 +159,9 @@ impl<'a> Context<'a> {
             found: Vec::new(),
         };
         if let Some(index) = &set.index {
+            let written: BTreeSet<u32> = set.rfcs.iter().map(|rfc| rfc.number).collect();
             for entry in &index.rfc {
-                if entry.state == State::Planned {
+                if !written.contains(&entry.number) {
                     cx.planned.insert(entry.number);
                 }
             }

@@ -1,0 +1,12 @@
+[section]
+anchor = "farewell"
+title = "Farewell"
+problem = "A person who stops the program doesn't know that it stopped."
+motivation = "A farewell tells the person that the program stopped."
+prose = "The program takes leave of the person when it stops."
+
+[[requirement]]
+id = "EX-0002-001"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print a farewell when it stops."

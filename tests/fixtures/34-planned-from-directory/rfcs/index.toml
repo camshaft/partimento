@@ -1,0 +1,14 @@
+[[rfc]]
+number = 1
+title = "Greetings"
+area = "core"
+
+[[rfc]]
+number = 2
+title = "Farewells"
+area = "core"
+
+[[rfc]]
+number = 3
+title = "Reminders"
+area = "core"
