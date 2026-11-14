@@ -814,6 +814,7 @@ table = { key = "value", nested = { list = [] } }
             .map(|text| Entry {
                 formula: parse(text).expect("the test's formula parses"),
                 origin: origin(1),
+                relation: None,
             })
             .collect();
         let conditions = atoms
@@ -824,6 +825,7 @@ table = { key = "value", nested = { list = [] } }
             })
             .collect();
         FormulaSet {
+            atoms: Vec::new(),
             formulas,
             conditions,
         }
