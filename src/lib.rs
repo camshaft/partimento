@@ -133,6 +133,10 @@ pub struct Report {
     /// Each finding, in the order of its file, its line, its rule, its requirement and its
     /// message.
     pub findings: Vec<Finding>,
+    /// The formula set checks 1 and 2 read: each atom, and each formula and condition with the
+    /// requirement, the file and the line it comes from. It is empty where the configuration
+    /// doesn't load.
+    pub formulas: logic::FormulaSet,
 }
 
 impl Report {
@@ -196,11 +200,12 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     cache: &C,
 ) -> Report {
     let mut findings = Vec::new();
+    let mut formulas = logic::FormulaSet::default();
     // A set that breaks a format rule doesn't render, so the drift of its generated files is
     // checked only once its format rules pass.
     if let Some((config, set)) = load(tree, cache, &mut findings) {
         let renders = !fails(&findings);
-        checks::check_cached::<B, C>(&config, &set, cache, &mut findings);
+        formulas = checks::check_cached::<B, C>(&config, &set, cache, &mut findings);
         if renders {
             let paths = render::Paths::of(&config.paths);
             let sections = render::sections(&set);
@@ -216,7 +221,7 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
         }
     }
     sort(&mut findings);
-    Report { findings }
+    Report { findings, formulas }
 }
 
 /// Each requirement added, changed and retired from `base` to `head`, two trees of one set, in
