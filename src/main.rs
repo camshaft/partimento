@@ -1,8 +1,9 @@
 //! The `partimento` command: reads specification trees from disk and runs the library on them.
 //!
-//! `partimento check [--root <dir>] [--format text|json] [--final]` prints each finding and exits
-//! with 0 where no finding fails the check, 1 where one does, and 2 where the arguments are wrong
-//! or a file can't be read.
+//! `partimento check [--root <dir>] [--format text|json] [--final] [--cache <dir>]` prints each
+//! finding and exits with 0 where no finding fails the check, 1 where one does, and 2 where the
+//! arguments are wrong or a file can't be read. With `--cache`, it keeps what the check builds
+//! from each section file in `<dir>`, a file for each key, and reads it back in later checks.
 //!
 //! `partimento diff <base> <head> [--format text|json]` prints each requirement added, changed or
 //! retired from the tree at `<base>` to the tree at `<head>` and exits with 0. Where either tree
@@ -21,10 +22,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fs, io};
 
-use partimento::{config, ByteVec, Change, Finding, Options, Tree};
+use partimento::{config, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree};
 
 const USAGE: &str = concat!(
-    "usage: partimento check [--root <dir>] [--format text|json] [--final]\n",
+    "usage: partimento check [--root <dir>] [--format text|json] [--final] [--cache <dir>]\n",
     "       partimento render [--root <dir>] [--format text|json]\n",
     "       partimento diff <base> <head> [--format text|json]",
 );
@@ -36,8 +37,8 @@ enum Format {
 }
 
 enum Command {
-    /// `check`, of the tree at a root.
-    Check(PathBuf, Options),
+    /// `check`, of the tree at a root, with the directory of its cache where `--cache` names one.
+    Check(PathBuf, Options, Option<PathBuf>),
     /// `render`, of the tree at a root.
     Render(PathBuf),
     /// `diff`, from the tree at a base to the tree at a head.
@@ -70,8 +71,8 @@ fn main() -> ExitCode {
 /// Runs the command and prints its output; the exit code, or why a file can't be read.
 fn run(args: &Args) -> Result<ExitCode, String> {
     let (output, failed) = match &args.command {
-        Command::Check(root, options) => {
-            let report = partimento::check_default(&read_tree(root)?, options);
+        Command::Check(root, options, cache) => {
+            let report = check(&read_tree(root)?, options, cache.as_deref())?;
             let output = findings_output(&report.findings, args.format);
             (output, report.failed())
         }
@@ -102,6 +103,7 @@ fn parse_check(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut root = PathBuf::from(".");
     let mut format = Format::Text;
     let mut options = Options::default();
+    let mut cache = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--root" => {
@@ -110,10 +112,14 @@ fn parse_check(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--format" => format = parse_format(args.next())?,
             "--final" => options.final_pass = true,
+            "--cache" => {
+                let dir = args.next().ok_or("--cache needs a directory")?;
+                cache = Some(PathBuf::from(dir));
+            }
             _ => return Err(format!("`{arg}` isn't an argument of `check`")),
         }
     }
-    let command = Command::Check(root, options);
+    let command = Command::Check(root, options, cache);
     Ok(Args { command, format })
 }
 
@@ -224,6 +230,65 @@ fn remove_empty(root: &Path, path: &str, dirs: &[String]) -> Result<(), String> 
         rest = parent;
     }
     Ok(())
+}
+
+/// The backend `check_default` checks with, which a check with a cache checks with too.
+type Backend = partimento::solver::FormatOnly;
+
+/// Checks the tree, and keeps the artifacts the check builds in `cache` where it names a
+/// directory.
+fn check(tree: &Tree, options: &Options, cache: Option<&Path>) -> Result<Report, String> {
+    let Some(dir) = cache else {
+        return Ok(partimento::check_default(tree, options));
+    };
+    let cache = DiskCache::open(dir)?;
+    Ok(partimento::check_cached::<Backend, _>(
+        tree, options, &cache,
+    ))
+}
+
+/// A cache on disk: a directory that holds each artifact in a file named by its key in hex.
+struct DiskCache {
+    dir: PathBuf,
+}
+
+impl DiskCache {
+    /// The cache in `dir`, which it makes where it isn't there.
+    fn open(dir: &Path) -> Result<DiskCache, String> {
+        let failed = |error: io::Error| io_error(dir, &error);
+        fs::create_dir_all(dir).map_err(failed)?;
+        let dir = dir.to_path_buf();
+        Ok(DiskCache { dir })
+    }
+
+    /// The file of the artifact kept under `key`.
+    fn file(&self, key: &Key) -> PathBuf {
+        let mut name = String::new();
+        for byte in key.0 {
+            let _ = write!(name, "{byte:02x}");
+        }
+        self.dir.join(name)
+    }
+}
+
+impl Cache for DiskCache {
+    fn get(&self, key: &Key) -> Option<ByteVec> {
+        let bytes = fs::read(self.file(key)).ok()?;
+        Some(ByteVec::from(bytes))
+    }
+
+    /// Writes the artifact to a file of its own and renames that file to the key's, so that a
+    /// read of the key's file reads a whole artifact. Where the write fails, the cache stays as it
+    /// was, and a later check builds the artifact again.
+    fn put(&self, key: Key, artifact: ByteVec) {
+        let file = self.file(&key);
+        let temporary = file.with_extension(format!("{}.tmp", std::process::id()));
+        let written = fs::write(&temporary, artifact.copy_to_bytes());
+        let renamed = written.and_then(|()| fs::rename(&temporary, &file));
+        if renamed.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+    }
 }
 
 /// Reads spec.toml and each file under the set's directories that spec.toml lists.
