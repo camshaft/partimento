@@ -357,9 +357,10 @@ fn cached_section<C: Cache>(
 }
 
 /// A section file's section, where the file parses, and the findings its read reports, which it
-/// adds to `findings`. A cache keeps what it returns under a key that holds the encoding's version
-/// and not this code, so raise `artifact::ENCODING` with each change to the findings, messages,
-/// lines or fields it returns, or to what `source::text`, `source::parse` and `read_fields` return.
+/// adds to `findings`. A cache keeps what it returns under a key that holds `artifact::BUILD`, the
+/// identity of this crate's code and of its Cargo.lock, so a change to this code, to what
+/// `source::text`, `source::parse` and `read_fields` return, or to the `toml` crate's version in
+/// that lock makes another key.
 fn load_section(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Option<Section> {
     let text = source::text(file, bytes, findings)?;
     let raw: RawSection = source::parse(file, &text, findings)?;

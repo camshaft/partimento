@@ -2,11 +2,11 @@
 //! its encoding.
 //!
 //! The artifact of a section file is its load: its section, where the file parses, and the
-//! findings its read reports. Its key is the SHA-256 of the crate's version, the encoding's
-//! version, the file's path and its bytes, each after its length, so that a change to any of them
-//! makes another key. Its encoding ends with the SHA-256 of the bytes before it, and the check
-//! reads the file again where a cache returns bytes that don't decode to a whole load, so a
-//! damaged entry doesn't change a report.
+//! findings its read reports. Its key is the SHA-256 of the crate's version, the identity of the
+//! build's code, the encoding's version, the file's path and its bytes, each after its length, so
+//! that a change to any of them makes another key. Its encoding ends with the SHA-256 of the bytes
+//! before it, and the check reads the file again where a cache returns bytes that don't decode to
+//! a whole load, so a damaged entry doesn't change a report.
 
 mod sha256;
 
@@ -18,13 +18,18 @@ use crate::{ByteVec, Finding, Key, Severity};
 /// The crate's version, which each key holds, so that a new version builds each artifact again.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The version of the encoding, which each key holds. A key doesn't hold the code that reads a
-/// section file, so raise this version with each change to what a section's load holds: to this
-/// encoding, or to the findings, messages, lines or fields that `model::load_section`,
-/// `source::text` and `source::parse` return, such as a new version of the `toml` crate that
-/// parses a file another way. A build with such a change and the same crate version would
-/// otherwise read an earlier build's entries from the same cache, and its report would differ from
-/// the report with `NoCache`.
+/// The identity of the code this build compiles, which each key holds: the SHA-256, in hex, that
+/// build.rs computes over each file under src/ and the Cargo.lock beside Cargo.toml. A change to
+/// the code that loads a section file, such as `model::load_section`, `source::text`,
+/// `source::parse` or this encoding, or to the `toml` version in that lock, makes another
+/// identity, so a build with such a change doesn't read an earlier build's entries from a cache.
+/// A build of this crate as a dependency of another workspace resolves its dependencies with that
+/// workspace's lock, which build.rs doesn't read.
+const BUILD: &str = env!("PARTIMENTO_BUILD");
+
+/// The version of the encoding, which each key holds. A change to this encoding, or to what a
+/// section's load holds, makes another `BUILD` and so another key, and leaves this version as it
+/// is.
 const ENCODING: u32 = 1;
 
 /// The first part of a section file's key, which no other kind of artifact's key starts with.
@@ -36,14 +41,15 @@ const DIGEST: usize = 32;
 /// The key of a section file's load.
 pub(crate) fn section_key(file: &str, bytes: &ByteVec) -> Key {
     let bytes = bytes.copy_to_bytes();
-    load_key(VERSION, ENCODING, file, &bytes)
+    load_key(VERSION, BUILD, ENCODING, file, &bytes)
 }
 
-fn load_key(version: &str, encoding: u32, file: &str, bytes: &[u8]) -> Key {
+fn load_key(version: &str, build: &str, encoding: u32, file: &str, bytes: &[u8]) -> Key {
     let encoding = encoding.to_le_bytes();
-    let parts: [&[u8]; 5] = [
+    let parts: [&[u8]; 6] = [
         SECTION,
         version.as_bytes(),
+        build.as_bytes(),
         &encoding,
         file.as_bytes(),
         bytes,
@@ -478,13 +484,20 @@ table = { key = "value", nested = { list = [] } }
     #[test]
     fn each_input_of_a_key_changes_it() {
         let (file, bytes) = ("rfcs/a.toml", b"id = 1\n".as_slice());
-        let key = load_key(VERSION, ENCODING, file, bytes);
-        assert_ne!(load_key("0.0.0-other", ENCODING, file, bytes), key);
-        assert_ne!(load_key(VERSION, ENCODING + 1, file, bytes), key);
-        assert_ne!(load_key(VERSION, ENCODING, "rfcs/b.toml", bytes), key);
-        assert_ne!(load_key(VERSION, ENCODING, file, b"id = 2\n"), key);
+        let key = load_key(VERSION, BUILD, ENCODING, file, bytes);
+        assert_ne!(load_key("0.0.0-other", BUILD, ENCODING, file, bytes), key);
+        assert_ne!(load_key(VERSION, "other build", ENCODING, file, bytes), key);
+        assert_ne!(load_key(VERSION, BUILD, ENCODING + 1, file, bytes), key);
+        assert_ne!(load_key(VERSION, BUILD, ENCODING, "rfcs/b.toml", bytes), key);
+        assert_ne!(load_key(VERSION, BUILD, ENCODING, file, b"id = 2\n"), key);
         let text = ByteVec::from(bytes.to_vec());
         assert_eq!(section_key(file, &text), key);
+    }
+
+    #[test]
+    fn the_build_identity_is_a_sha256_in_hex() {
+        assert_eq!(BUILD.len(), 64);
+        assert!(BUILD.bytes().all(|byte| byte.is_ascii_hexdigit()));
     }
 
     #[test]
