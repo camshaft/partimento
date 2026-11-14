@@ -9,6 +9,7 @@ id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a greeting when it starts."
+relations = [{ kind = "depends_on", target = "EX-0100-001" }]
 
 [[requirement]]
 id = "EX-0001-002"
