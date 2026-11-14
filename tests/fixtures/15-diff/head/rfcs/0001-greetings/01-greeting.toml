@@ -1,0 +1,53 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it starts."
+
+[[requirement]]
+id = "EX-0001-002"
+label = "named-greeting"
+level = "SHOULD"
+polarity = "required"
+statement = "The greeting SHOULD hold the person's name."
+rationale = "The person's name shows that the greeting is for them."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MAY"
+polarity = "required"
+statement = "The greeting MAY hold the date."
+
+[[requirement]]
+id = "EX-0001-005"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the greeting before it reads input."
+conditions = ["EX-0001-002", "EX-0001-001"]
+
+[[requirement]]
+id = "EX-0001-007"
+level = "MUST"
+polarity = "required"
+statement = "A change that removes a requirement MUST list its identifier in the RFC's retired list."
+binds_to = "process"
+
+[[requirement]]
+id = "EX-0001-009"
+level = "SHOULD"
+polarity = "required"
+statement = "A change to a requirement SHOULD state its reason."
+binds_to = "process"
+
+[[requirement]]
+id = "EX-0001-010"
+level = "MAY"
+polarity = "required"
+statement = "A change MAY add a language of the greeting."
+binds_to = "system"

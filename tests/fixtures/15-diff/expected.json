@@ -1,0 +1,8 @@
+[
+{"kind":"changed","requirement":"EX-0001-003","binds_to":"system"},
+{"kind":"retired","requirement":"EX-0001-004","binds_to":"process"},
+{"kind":"added","requirement":"EX-0001-007","binds_to":"process"},
+{"kind":"added","requirement":"EX-0001-008","binds_to":"system"},
+{"kind":"changed","requirement":"EX-0001-009","binds_to":"process"},
+{"kind":"changed","requirement":"EX-0001-010","binds_to":"system"}
+]

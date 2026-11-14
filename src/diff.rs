@@ -2,10 +2,10 @@
 //!
 //! A requirement is the same in both trees where both hold its identifier, whichever file holds
 //! it. It is changed where its statement, level, polarity, conditions, composition, parts,
-//! relations, logic or parameters differ, with each of them that a block leaves out read at its
-//! default and each list read as its items in any order, so that a move, a reorder of a list or a
-//! default written out isn't a change, and neither is a change of `label`, `rationale` or
-//! `binds_to` alone.
+//! relations, logic, parameters or `binds_to` differ, with each of them that a block leaves out
+//! read at its default and each list read as its items in any order, so that a move, a reorder of
+//! a list or a default written out isn't a change, and neither is a change of `label` or
+//! `rationale` alone.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -28,6 +28,7 @@ const COMPARED: &[&str] = &[
     "relations",
     "logic",
     "params",
+    "binds_to",
 ];
 
 /// The fields whose value is a list of items in any order, empty where a block leaves it out.
@@ -36,6 +37,9 @@ const LISTS: &[&str] = &["conditions", "parts", "relations", "logic", "params"];
 /// The composition of a block that leaves `compose` out.
 const ATOMIC: &str = "atomic";
 
+/// The binding of a block that leaves `binds_to` out.
+const SYSTEM: &str = "system";
+
 /// How a requirement differs between the base tree and the head tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -43,7 +47,7 @@ pub enum ChangeKind {
     /// The head holds the requirement's identifier, and the base doesn't.
     Added,
     /// Both trees hold it, and its statement, level, polarity, conditions, composition, parts,
-    /// relations, logic or parameters differ.
+    /// relations, logic, parameters or `binds_to` differ.
     Changed,
     /// The base holds it, and the head doesn't.
     Retired,
@@ -206,8 +210,8 @@ fn same_requirement(base: &Block, head: &Block) -> bool {
         })
 }
 
-/// The fields of a block that say what it requires, with each list it leaves out empty and
-/// `compose` atomic where it leaves that out.
+/// The fields of a block that say what it requires, with each list it leaves out empty, `compose`
+/// atomic where it leaves that out and `binds_to` system where it leaves that out.
 fn meaning(block: &Block) -> BTreeMap<&'static str, Value> {
     let mut fields = BTreeMap::new();
     for key in COMPARED {
@@ -215,6 +219,7 @@ fn meaning(block: &Block) -> BTreeMap<&'static str, Value> {
             Some(field) => field.value.clone(),
             None if LISTS.contains(key) => Value::Array(Vec::new()),
             None if *key == "compose" => Value::String(ATOMIC.to_string()),
+            None if *key == "binds_to" => Value::String(SYSTEM.to_string()),
             None => continue,
         };
         fields.insert(*key, value);
