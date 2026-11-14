@@ -233,7 +233,7 @@ fn remove_empty(root: &Path, path: &str, dirs: &[String]) -> Result<(), String> 
 }
 
 /// The backend `check_default` checks with, which a check with a cache checks with too.
-type Backend = partimento::solver::FormatOnly;
+type Backend = partimento::solver::DefaultBackend;
 
 /// Checks the tree, and keeps the artifacts the check builds in `cache` where it names a
 /// directory.

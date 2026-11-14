@@ -1,0 +1,7 @@
+error[composition] rfcs/0001-greetings/01-greeting.toml:12: EX-0001-001: `all_of` holds no part: `parts` lists the requirements it composes
+error[logic] rfcs/0001-greetings/01-greeting.toml:13: EX-0001-001: `EX-0001-002 &` isn't a formula: at byte 13: expected an identifier, `!` or `(`
+error[composition] rfcs/0001-greetings/01-greeting.toml:21: EX-0001-002: `unless` holds one part, its exception, and `parts` lists 2
+error[relation] rfcs/0001-greetings/01-greeting.toml:22: EX-0001-002: `follows` isn't a relation kind: `depends_on`, `implies`, `refines`, `conflicts_with` or `supersedes`
+error[relation] rfcs/0001-greetings/01-greeting.toml:22: EX-0001-002: a relation holds `kind` and `target`, each a string
+error[composition] rfcs/0001-greetings/01-greeting.toml:30: EX-0001-003: an `atomic` requirement holds no parts: `compose` sets `all_of`, `any_of`, `exactly_one` or `unless` for them
+error[parameter] rfcs/0001-greetings/01-greeting.toml:31: EX-0001-003: a parameter holds `name`, `bound` (`min`, `max` or `exact`) and a number as `value`

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use partimento::{ByteVec, Cache, Finding, Key, Options, Report, Tree};
 
 /// The backend each check of these tests checks with.
-type Backend = partimento::solver::FormatOnly;
+type Backend = partimento::solver::DefaultBackend;
 
 /// One file of fixture 02-duplicate-identifier, by its path in the tree and its text.
 macro_rules! fixture_file {

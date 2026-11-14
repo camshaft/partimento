@@ -11,13 +11,18 @@ pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
 mod artifact;
+pub mod checks;
 pub mod config;
 mod diff;
+pub mod logic;
 pub mod model;
 mod render;
 pub mod rules;
 pub mod solver;
 mod source;
+
+#[cfg(not(any(feature = "batsat", feature = "varisat")))]
+compile_error!("enable a solver backend: the `batsat` feature or the `varisat` feature");
 
 pub use diff::{Binding, Change, ChangeKind};
 
@@ -169,9 +174,9 @@ pub fn check<B: solver::Backend + Default>(tree: &Tree, options: &Options) -> Re
     check_cached::<B, NoCache>(tree, options, &NoCache)
 }
 
-/// Checks the tree with the default backend.
+/// Checks the tree with the default backend: batsat where its feature is on, else varisat.
 pub fn check_default(tree: &Tree, options: &Options) -> Report {
-    check::<solver::FormatOnly>(tree, options)
+    check::<solver::DefaultBackend>(tree, options)
 }
 
 /// Checks the tree with the solver backend `B`, keeping the artifacts it builds in `cache`.
@@ -184,7 +189,9 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     // A set that breaks a format rule doesn't render, so the drift of its generated files is
     // checked only once its format rules pass.
     if let Some((config, set)) = load(tree, cache, &mut findings) {
-        if !fails(&findings) {
+        let renders = !fails(&findings);
+        checks::check::<B>(&config, &set, &mut findings);
+        if renders {
             let paths = render::Paths::of(&config.paths);
             let generated = render::generate(paths, &render::sections(&set));
             findings.extend(render::drift(paths, tree, &generated));
