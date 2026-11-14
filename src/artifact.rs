@@ -18,7 +18,13 @@ use crate::{ByteVec, Finding, Key, Severity};
 /// The crate's version, which each key holds, so that a new version builds each artifact again.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The version of the encoding, which each key holds.
+/// The version of the encoding, which each key holds. A key doesn't hold the code that reads a
+/// section file, so raise this version with each change to what a section's load holds: to this
+/// encoding, or to the findings, messages, lines or fields that `model::load_section`,
+/// `source::text` and `source::parse` return, such as a new version of the `toml` crate that
+/// parses a file another way. A build with such a change and the same crate version would
+/// otherwise read an earlier build's entries from the same cache, and its report would differ from
+/// the report with `NoCache`.
 const ENCODING: u32 = 1;
 
 /// The first part of a section file's key, which no other kind of artifact's key starts with.
