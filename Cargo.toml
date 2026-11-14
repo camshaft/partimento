@@ -23,6 +23,9 @@ serde = { version = "1", features = ["derive"] }
 toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
 varisat = { version = "0.2.2", optional = true }
 
+[dev-dependencies]
+serde_json = "1"
+
 [[bin]]
 name = "partimento"
 path = "src/main.rs"
