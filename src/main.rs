@@ -91,7 +91,8 @@ fn read_tree(root: &Path) -> Result<Tree, String> {
     let mut tree = Tree::default();
     let spec = root.join(config::FILE);
     let bytes = fs::read(&spec).map_err(|error| unreadable(&spec, &error))?;
-    tree.files.insert(config::FILE.to_string(), ByteVec::from(bytes));
+    let file = config::FILE.to_string();
+    tree.files.insert(file, ByteVec::from(bytes));
 
     // A configuration with findings leaves the tree at spec.toml, and the check reports them.
     let Some(config) = config::load(&tree, &mut Vec::new()) else {
