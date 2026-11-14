@@ -182,7 +182,10 @@ fn insert(
     id: &str,
     block: &Block,
 ) {
-    let order = (rules::parse_identifier(&tree.config.prefix, id), id.to_string());
+    let order = (
+        rules::parse_identifier(&tree.config.prefix, id),
+        id.to_string(),
+    );
     let binds_to = match block.text("binds_to") {
         Some("process") => Binding::Process,
         _ => Binding::System,

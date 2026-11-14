@@ -63,7 +63,8 @@ fn run(args: &Args) -> Result<ExitCode, String> {
     let (output, failed) = match &args.command {
         Command::Check(root, options) => {
             let report = partimento::check_default(&read_tree(root)?, options);
-            (findings_output(&report.findings, args.format), report.failed())
+            let output = findings_output(&report.findings, args.format);
+            (output, report.failed())
         }
         Command::Diff(base, head) => {
             let (base, head) = (read_tree(base)?, read_tree(head)?);
