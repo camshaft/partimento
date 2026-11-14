@@ -21,12 +21,13 @@ use crate::{ByteVec, Finding, Key, Severity};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The identity of the code this build compiles, which each key holds: the SHA-256, in hex, that
-/// build.rs computes over each file under src/ and the Cargo.lock beside Cargo.toml. A change to
-/// the code that loads a section file, such as `model::load_section`, `source::text`,
-/// `source::parse` or this encoding, or to the `toml` version in that lock, makes another
-/// identity, so a build with such a change doesn't read an earlier build's entries from a cache.
-/// A build of this crate as a dependency of another workspace resolves its dependencies with that
-/// workspace's lock, which build.rs doesn't read.
+/// build.rs computes over each file under src/, Cargo.toml and the Cargo.lock beside it. A change
+/// to the code that loads a section file, such as `model::load_section`, `source::text`,
+/// `source::parse` or this encoding, to the features Cargo.toml sets for `toml`, or to the `toml`
+/// version in that lock, makes another identity, so a build with such a change doesn't read an
+/// earlier build's entries from a cache. A build of this crate as a dependency of another
+/// workspace resolves its dependencies with that workspace's lock, and turns on each feature of
+/// `toml` that the workspace's other packages ask for, which build.rs doesn't read.
 const BUILD: &str = env!("PARTIMENTO_BUILD");
 
 /// The version of the encoding, which each key holds. A change to this encoding, or to what a
@@ -512,14 +513,36 @@ table = { key = "value", nested = { list = [] } }
     #[test]
     fn each_file_of_a_build_changes_its_identity() {
         let lib = build_file("src/lib.rs", b"mod a;\n");
+        let manifest = build_file("Cargo.toml", b"features = [\"parse\"]\n");
         let lock = build_file("Cargo.lock", b"toml 0.8.0\n");
-        let identity = build_identity::identity(&[lib.clone(), lock.clone()]);
+        let identity = build_identity::identity(&[lib.clone(), manifest.clone(), lock.clone()]);
         let changed = [
-            vec![build_file("src/lib.rs", b"mod b;\n"), lock.clone()],
-            vec![build_file("src/main.rs", b"mod a;\n"), lock.clone()],
-            vec![lib.clone(), build_file("Cargo.lock", b"toml 0.9.0\n")],
-            vec![build_file("src/lib.r", b"smod a;\n"), lock],
-            vec![lib],
+            vec![
+                build_file("src/lib.rs", b"mod b;\n"),
+                manifest.clone(),
+                lock.clone(),
+            ],
+            vec![
+                build_file("src/main.rs", b"mod a;\n"),
+                manifest.clone(),
+                lock.clone(),
+            ],
+            vec![
+                lib.clone(),
+                build_file("Cargo.toml", b"features = [\"parse\", \"preserve_order\"]\n"),
+                lock.clone(),
+            ],
+            vec![
+                lib.clone(),
+                manifest.clone(),
+                build_file("Cargo.lock", b"toml 0.9.0\n"),
+            ],
+            vec![
+                build_file("src/lib.r", b"smod a;\n"),
+                manifest.clone(),
+                lock,
+            ],
+            vec![lib, manifest],
         ];
         for files in &changed {
             assert_ne!(build_identity::identity(files), identity, "{files:?}");
@@ -533,9 +556,29 @@ table = { key = "value", nested = { list = [] } }
         let files = build_identity::package_files(root).expect("the package's files read");
         let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
         assert!(paths.contains(&"src/artifact/sha256.rs"), "{paths:?}");
-        assert_eq!(paths.last(), Some(&"Cargo.lock"));
-        assert!(paths[..paths.len() - 1].is_sorted(), "{paths:?}");
+        assert!(paths.ends_with(&["Cargo.toml", "Cargo.lock"]), "{paths:?}");
+        assert!(paths[..paths.len() - 2].is_sorted(), "{paths:?}");
         assert_eq!(build_identity::identity(&files), BUILD);
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn a_missing_lock_is_left_out_and_a_lock_that_doesnt_read_is_an_error() {
+        use std::fs;
+        let name = format!("partimento-package-files-{}", std::process::id());
+        let root = std::env::temp_dir().join(name);
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).expect("the test makes src/");
+        fs::write(root.join("src/lib.rs"), "mod a;\n").expect("the test writes src/lib.rs");
+        fs::write(root.join("Cargo.toml"), "[package]\n").expect("the test writes Cargo.toml");
+        let files = build_identity::package_files(&root).expect("the package's files read");
+        let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(paths, ["src/lib.rs", "Cargo.toml"]);
+        // A read of a directory fails with another error than a missing file's.
+        fs::create_dir(root.join("Cargo.lock")).expect("the test makes a directory");
+        let read = build_identity::package_files(&root);
+        fs::remove_dir_all(&root).expect("the test removes its package");
+        assert!(read.is_err(), "{read:?}");
     }
 
     #[test]
