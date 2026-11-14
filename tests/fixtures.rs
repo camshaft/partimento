@@ -82,6 +82,15 @@ const FIXTURES: &[Fixture] = &[
     fixture!("25-supersedes-bound"),
     fixture!("26-supersedes-part"),
     fixture!(
+        "27-supersedes-findings";
+        "spec.toml",
+        "rfcs/index.toml",
+        "rfcs/0001-greetings/rfc.toml",
+        "rfcs/0001-greetings/01-greeting.toml",
+        "rfcs/0200-scheduling/rfc.toml",
+        "rfcs/0200-scheduling/01-schedule.toml",
+    ),
+    fixture!(
         "24-contract-logic";
         "spec.toml",
         "rfcs/index.toml",
