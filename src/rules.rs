@@ -370,7 +370,7 @@ fn list(items: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{holds_line_break, is_anchor};
+    use super::*;
 
     #[test]
     fn an_anchor_is_ascii_letters_digits_hyphens_and_underscores() {
@@ -401,5 +401,17 @@ mod tests {
         for title in ["Saying hello\n", "\nSaying hello", "Saying hello"] {
             assert!(!holds_line_break(title), "{title:?}");
         }
+    }
+
+    #[test]
+    fn a_value_that_isnt_a_string_breaks_neither_form() {
+        let field = Field {
+            key: "anchor".to_string(),
+            line: 2,
+            value: Value::Integer(5),
+        };
+        assert_eq!(string(&field), "");
+        assert!(is_anchor(string(&field)));
+        assert!(!holds_line_break(string(&field)));
     }
 }
