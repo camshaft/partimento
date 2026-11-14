@@ -1,0 +1,9 @@
+number = 1
+title = "Greetings"
+area = "core"
+abstract = "How the program greets a person when it starts and when it stops."
+retired = [
+    "EX-0001-003",
+    "EX-0002-001",
+    "EX-9",
+]

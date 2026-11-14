@@ -1,0 +1,30 @@
+[section]
+anchor = "broken"
+title = "Broken"
+problem = "A reader can't tell a broken block from a good one."
+motivation = "Each finding names the line that breaks a rule."
+prose = 3
+
+[[requirement]]
+id = "EX-1-1"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a farewell when it stops."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the farewell once."
+
+[[requirement]]
+id = "EX-0001-004"
+level = "MUST"
+polarity = "required"
+
+[[requirement]]
+id = "EX-0001-005"
+level = 1
+polarity = "required"
+statement = "The program MUST flush the output stream."
+conditions = "when it stops"

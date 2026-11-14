@@ -1,0 +1,4 @@
+[
+{"severity":"error","rule":"section-field","file":"rfcs/0001-greetings/01-greeting.toml","line":1,"requirement":null,"message":"the section doesn't hold `problem`, one of `anchor`, `title`, `problem`, `motivation`"},
+{"severity":"error","rule":"section-field","file":"rfcs/0001-greetings/02-farewell.toml","line":5,"requirement":null,"message":"the section's `motivation` is empty"}
+]
