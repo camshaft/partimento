@@ -47,7 +47,10 @@ const CONFLICTING: &[(&str, &str)] = &[
     fixture_file!("06-minimal-conflict", "spec.toml"),
     fixture_file!("06-minimal-conflict", "rfcs/index.toml"),
     fixture_file!("06-minimal-conflict", "rfcs/0001-greetings/rfc.toml"),
-    fixture_file!("06-minimal-conflict", "rfcs/0001-greetings/01-greeting.toml"),
+    fixture_file!(
+        "06-minimal-conflict",
+        "rfcs/0001-greetings/01-greeting.toml"
+    ),
 ];
 
 /// A cache that keeps each artifact in memory, and counts the artifacts it returns.
