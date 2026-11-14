@@ -75,6 +75,11 @@ const FIXTURES: &[Fixture] = &[
         ".duvet/requirements/0001-greetings/01-greeting/EX-0001-002.toml",
         ".duvet/requirements/0001-greetings/01-greeting/EX-0001-003.toml"
     ),
+    fixture!(
+        "section-heading",
+        "rfcs/0001-greetings/02-spaced.toml",
+        "rfcs/0001-greetings/03-brace.toml"
+    ),
 ];
 
 /// The message of the drift finding of a generated file that no section generates.
@@ -356,6 +361,7 @@ fn a_set_whose_format_rules_fail_doesnt_render() {
         "05-key-word",
         "12-unknown-field",
         "13-section-field",
+        "section-heading",
     ];
     assert_eq!(names, failing);
 }

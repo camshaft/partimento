@@ -1,0 +1,11 @@
+[section]
+anchor = "saying hello"
+title = "Saying\nhello"
+problem = "A person whose name the program knows isn't greeted by it."
+motivation = "A greeting by name tells the person that the program knows them."
+
+[[requirement]]
+id = "EX-0001-002"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD greet the person by name where it knows the name."
