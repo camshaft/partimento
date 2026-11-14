@@ -567,7 +567,9 @@ impl<'a> Context<'a> {
         let superseded = &self.superseded;
         let live = |origin: &Origin| !superseded.contains(origin.requirement.as_str());
         self.set.formulas.retain(|entry| live(&entry.origin));
-        self.set.conditions.retain(|condition| live(&condition.origin));
+        self.set
+            .conditions
+            .retain(|condition| live(&condition.origin));
         self.leads.retain(|id, _| !superseded.contains(id));
         self.cycle.retain(|id, _| !superseded.contains(id));
     }
@@ -935,7 +937,7 @@ mod tests {
     }
 
     thread_local! {
-        static SOLVES: std::cell::Cell<usize> = std::cell::Cell::new(0);
+        static SOLVES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
 
     /// A backend that counts its solves on the thread that runs it.
