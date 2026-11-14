@@ -147,12 +147,14 @@ pub fn generate_cached<C: Cache>(
     let mut generated = Generated::default();
     for section in sections {
         let key = artifact::render_key(paths, section);
-        let kept = cache.get(&key).as_ref().and_then(artifact::decode_render);
-        let files = kept.unwrap_or_else(|| {
-            let files = generate(paths, std::slice::from_ref(section));
-            cache.put(key, artifact::encode_render(&files));
-            files
-        });
+        let files = match cache.get(&key) {
+            Some(bytes) => artifact::decode_render(&bytes).unwrap_or_default(),
+            None => {
+                let files = generate(paths, std::slice::from_ref(section));
+                cache.put(key, artifact::encode_render(&files));
+                files
+            }
+        };
         generated.tree.files.extend(files.tree.files);
         generated.requirements.extend(files.requirements);
     }
