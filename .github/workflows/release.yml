@@ -6,8 +6,15 @@ name: release
 #   - `release`, once that pull request merges, publishes the crate to crates.io, pushes the tag
 #     v<version> and creates the GitHub release. release-plz.toml sets `release_always = false`,
 #     so no other push to main publishes anything.
-#   - `binaries` builds static Linux programs for x86_64 and aarch64 and attaches them, with their
-#     SHA-256 sums, to that release.
+#
+# The static Linux programs for x86_64 and aarch64, and their SHA-256 sums, attach to that release:
+#   - `plan` reads Cargo.toml's version, and asks for the programs where the tag v<version> doesn't
+#     exist yet (this run may release it) or where its release lacks an archive or its sum.
+#   - `binaries` builds them from that commit with the read-only token.
+#   - `release` attaches each missing file to the release v<version> once the tag exists, and
+#     creates the release where the tag has none, so a release published in an earlier run without
+#     its programs gets them on the next run.
+# Only `release-pr` and `release` hold a write token, and neither of them builds the programs.
 #
 # crates.io Trusted Publishing through GitHub OIDC (rust-lang/crates-io-auth-action): no
 # CARGO_REGISTRY_TOKEN and no personal token. The publisher is registered on crates.io for the
@@ -53,16 +60,119 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Read Cargo.toml's version, and decide whether this run builds the programs and from which
+  # commit: this commit where the tag v<version> doesn't exist yet, or the tag's commit where its
+  # release lacks an archive or its sum.
+  plan:
+    name: plan the programs
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.plan.outputs.commit }}
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+      - name: Plan the programs
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "partimento") | .version')"
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if ! commit="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")"; then
+            # No tag of this version yet: build this commit, which `release` may release in this run.
+            echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The tag exists: build from its commit where its release lacks an archive or its sum.
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          code="$(curl -sS -o release.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          case "$code" in
+            200) jq -r '.assets[].name' release.json > assets.txt ;;
+            404) : > assets.txt ;;
+            *) echo "Reading the release $tag answered HTTP $code." >&2; exit 1 ;;
+          esac
+          build=false
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            for file in "partimento-$target.tar.gz" "partimento-$target.tar.gz.sha256"; do
+              grep -qxF "$file" assets.txt || build=true
+            done
+          done
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  # Build the partimento program for each target from the commit `plan` chose, with the read-only
+  # token, and keep the archive and its SHA-256 sum as this run's artifacts for `release`.
+  binaries:
+    name: binaries ${{ matrix.target }}
+    needs: plan
+    if: ${{ needs.plan.outputs.build == 'true' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Static Linux programs through musl, each built on a runner of its own architecture.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup override set stable
+      # musl-tools holds the musl-gcc compiler driver that C code built for the *-linux-musl
+      # targets uses.
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build the partimento program
+        env:
+          TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
+        run: cargo build --locked --release --bin partimento --target "$TARGET"
+      - name: Archive the program with its SHA-256 sum
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          tar -czf "dist/partimento-$TARGET.tar.gz" -C "target/$TARGET/release" partimento
+          (cd dist && sha256sum "partimento-$TARGET.tar.gz" > "partimento-$TARGET.tar.gz.sha256")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: partimento-${{ matrix.target }}
+          path: dist/
+          retention-days: 1
+          if-no-files-found: error
+
   # After the release pull request merges: publish the crate through OIDC, push the tag and create
-  # the GitHub release. Its tag goes to the binaries job, which attaches the programs to it.
+  # the GitHub release, then attach the programs `binaries` built. It waits for `binaries` and
+  # doesn't run after a failed build, so a version doesn't publish while its programs fail to build.
   release:
     name: release-plz release (publish + tag)
+    needs: [plan, binaries]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push the tag and create the GitHub release
+      contents: write # push the tag, create the GitHub release and attach the programs to it
       id-token: write # crates.io Trusted Publishing (OIDC)
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -76,61 +186,56 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: release-plz release
-        id: release-plz
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      # The tag of this run's partimento release, or empty where this run released nothing.
-      - name: Release tag
-        id: tag
-        if: ${{ steps.release-plz.outputs.releases_created == 'true' }}
+      - name: Download the programs
+        if: ${{ needs.plan.outputs.build == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: partimento-*
+          path: dist
+          merge-multiple: true
+      # Attach each file the release v<version> lacks: this run's release, or one an earlier run
+      # published without its programs. Where no tag of the version exists yet, as on a push that
+      # releases nothing, it doesn't attach anything.
+      - name: Attach the programs to the release
+        if: ${{ needs.plan.outputs.build == 'true' }}
         env:
-          RELEASES: ${{ steps.release-plz.outputs.releases }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          BUILT: ${{ needs.plan.outputs.commit }}
         run: |
           set -euo pipefail
-          tag="$(printf '%s' "$RELEASES" | jq -r '.[] | select(.package_name == "partimento") | .tag')"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-  # Build the partimento program for each target and attach the archive and its SHA-256 sum to the
-  # release the `release` job created, with taiki-e/upload-rust-binary-action.
-  binaries:
-    name: binaries ${{ matrix.target }}
-    needs: release
-    if: ${{ needs.release.outputs.tag != '' }}
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write # upload the archives to the GitHub release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Static Linux programs through musl, each built on a runner of its own architecture.
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.release.outputs.tag }}
-      # musl-tools holds the musl-gcc linker driver the *-linux-musl targets use.
-      - name: Install musl tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Build and upload the partimento program
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: partimento
-          target: ${{ matrix.target }}
-          features: cli
-          archive: $bin-$target
-          checksum: sha256
-          locked: true
-          build-tool: cargo
-          ref: refs/tags/${{ needs.release.outputs.tag }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
-          CC_aarch64_unknown_linux_musl: musl-gcc
+          git fetch --force --tags origin
+          if ! commit="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}")"; then
+            echo "There is no tag $TAG yet, so this run doesn't attach anything."
+            exit 0
+          fi
+          if [ "$commit" != "$BUILT" ]; then
+            echo "The tag $TAG is at $commit, but the programs were built from $BUILT." >&2
+            exit 1
+          fi
+          code="$(curl -sS -o release.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          case "$code" in
+            200) jq -r '.assets[].name' release.json > assets.txt ;;
+            404)
+              # The tag exists without its release, as where the release's creation failed after
+              # the publish: create it.
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+              : > assets.txt
+              ;;
+            *) echo "Reading the release $TAG answered HTTP $code." >&2; exit 1 ;;
+          esac
+          missing=()
+          for file in dist/*; do
+            grep -qxF "$(basename "$file")" assets.txt || missing+=("$file")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "${missing[@]}"
+          fi
