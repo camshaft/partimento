@@ -59,6 +59,7 @@ const FIXTURES: &[Fixture] = &[
         "rfcs/0002-farewells/rfc.toml",
         "rfcs/0002-farewells/01-farewell.toml"
     ),
+    fixture!("33-exactly-one-logic"),
 ];
 
 /// The listed fixture of that name.
