@@ -13,6 +13,8 @@
 //! as `serialize_newtype_variant` for the part of `Not` and `SerializeSeq::serialize_element` for
 //! each part of `And`, is handed that value as a `&T` with `T: Serialize` and serializes it before
 //! it returns, so a `Serialize` written by hand would make the same nested calls.
+//! [`crate::json`] writes the same JSON with a stack on the heap, for a host whose formulas nest
+//! deep.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -714,6 +716,10 @@ pub struct Atom {
 }
 
 /// The formula set of a specification.
+///
+/// Its derived `Serialize` recurses once for each level of a formula's nesting, as the module's
+/// documentation says; [`crate::json::formula_set`] writes the same JSON with a stack on the
+/// heap.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct FormulaSet {
     /// Each atom of the formulas and the conditions, in the order of its identifier.

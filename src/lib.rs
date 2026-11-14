@@ -14,6 +14,7 @@ mod artifact;
 pub mod checks;
 pub mod config;
 mod diff;
+pub mod json;
 pub mod logic;
 pub mod model;
 mod render;
