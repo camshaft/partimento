@@ -7,6 +7,14 @@
 //! that a change to any of them makes another key. Its encoding ends with the SHA-256 of the bytes
 //! before it, and the check reads the file again where a cache returns bytes that don't decode to
 //! a whole load, so a damaged entry doesn't change a report.
+//!
+//! Two artifacts follow from the set's loads. The result of checks 1 and 2 for the set's formulas
+//! is kept under a key of the formulas and of the conditions' atoms, and only where the formulas
+//! hold together: a conflict's minimal subset starts from the backend's core, and the conditions
+//! that can't hold don't depend on the backend. The files a section generates are kept under a
+//! key of each part of the section that a render reads and of the two paths the files go under.
+//! Their keys hold the crate's version and the build's identity too, and each of their encodings
+//! ends with its digest, as a section's load does.
 
 #[cfg(test)]
 mod build_identity;
@@ -14,7 +22,9 @@ mod sha256;
 
 use toml::Value;
 
+use crate::logic::{Formula, FormulaSet};
 use crate::model::{Block, Field, Section};
+use crate::render::{Generated, Paths, Section as Rendered};
 use crate::{ByteVec, Finding, Key, Severity};
 
 /// The crate's version, which each key holds, so that a new version builds each artifact again.
@@ -39,6 +49,22 @@ const SECTION: &[u8] = b"partimento section load";
 
 /// The bytes of the digest that ends an encoding.
 const DIGEST: usize = 32;
+
+/// The first part of the key of checks 1 and 2's result for a formula set.
+const CONSISTENCY: &[u8] = b"partimento consistency";
+
+/// The version of the encoding of checks 1 and 2's result and of the formulas its key holds,
+/// which the key holds too. A change to that encoding, or to what `checks::consistency` returns,
+/// makes another `BUILD` and so another key, and leaves this version as it is.
+const CONSISTENCY_ENCODING: u32 = 1;
+
+/// The first part of the key of the files a section generates.
+const RENDER: &[u8] = b"partimento section render";
+
+/// The version of the encoding of a section's generated files, which their key holds. A change to
+/// that encoding, or to the files `render::generate` writes, makes another `BUILD` and so another
+/// key, and leaves this version as it is.
+const RENDER_ENCODING: u32 = 1;
 
 /// The key of a section file's load.
 pub(crate) fn section_key(file: &str, bytes: &ByteVec) -> Key {
@@ -100,6 +126,137 @@ pub(crate) fn decode_section(bytes: &ByteVec) -> Option<(Vec<Finding>, Option<Se
     reader.bytes.is_empty().then_some((findings, section))
 }
 
+/// The key of checks 1 and 2's result for `set`: its formulas in order and its conditions' atoms
+/// in order. It leaves out where each formula and condition comes from, which doesn't change the
+/// result, and the backend, since only a result without a conflict is kept.
+pub(crate) fn consistency_key(set: &FormulaSet) -> Key {
+    consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING, &formulas(set))
+}
+
+fn consistency_key_of(version: &str, build: &str, encoding: u32, formulas: &[u8]) -> Key {
+    let encoding = encoding.to_le_bytes();
+    let parts: [&[u8]; 5] = [
+        CONSISTENCY,
+        version.as_bytes(),
+        build.as_bytes(),
+        &encoding,
+        formulas,
+    ];
+    key(&parts)
+}
+
+/// The formulas of `set`, each in the prefix encoding that `Writer::formula` writes, and the
+/// atoms of its conditions, each list after its count.
+fn formulas(set: &FormulaSet) -> Vec<u8> {
+    let mut writer = Writer::default();
+    writer.count(set.formulas.len());
+    for entry in &set.formulas {
+        writer.formula(&entry.formula);
+    }
+    writer.count(set.conditions.len());
+    for condition in &set.conditions {
+        writer.text(&condition.atom);
+    }
+    writer.bytes
+}
+
+/// The encoding of checks 1 and 2's result for a formula set whose formulas hold together: the
+/// indexes of the conditions that can't hold.
+pub(crate) fn encode_consistency(vacuous: &[usize]) -> ByteVec {
+    let mut writer = Writer::default();
+    writer.count(vacuous.len());
+    for &index in vacuous {
+        writer.count(index);
+    }
+    ByteVec::from(seal(writer.bytes))
+}
+
+/// The indexes of the conditions that can't hold that `bytes` encode, where they are a whole
+/// encoding whose digest holds, each index is below `conditions` and each is above the one before
+/// it.
+pub(crate) fn decode_consistency(bytes: &ByteVec, conditions: usize) -> Option<Vec<usize>> {
+    let bytes = bytes.copy_to_bytes();
+    let body = unseal(&bytes)?;
+    let mut reader = Reader { bytes: body };
+    let vacuous = reader.list(Reader::count)?;
+    let rising = vacuous.windows(2).all(|pair| pair[0] < pair[1]);
+    let within = vacuous.iter().all(|&index| index < conditions);
+    (reader.bytes.is_empty() && rising && within).then_some(vacuous)
+}
+
+/// The key of the files `section` generates: the two paths they go under, and each part of the
+/// section that a render reads.
+pub(crate) fn render_key(paths: Paths<'_>, section: &Rendered<'_>) -> Key {
+    render_key_of(VERSION, BUILD, RENDER_ENCODING, paths, section)
+}
+
+fn render_key_of(
+    version: &str,
+    build: &str,
+    encoding: u32,
+    paths: Paths<'_>,
+    section: &Rendered<'_>,
+) -> Key {
+    let encoding = encoding.to_le_bytes();
+    let count = (section.requirements.len() as u64).to_le_bytes();
+    let head: [&[u8]; 12] = [
+        RENDER,
+        version.as_bytes(),
+        build.as_bytes(),
+        &encoding,
+        paths.rendered.as_bytes(),
+        paths.requirements.as_bytes(),
+        section.rfc.as_bytes(),
+        section.name.as_bytes(),
+        section.anchor.as_bytes(),
+        section.title.as_bytes(),
+        section.prose.as_bytes(),
+        &count,
+    ];
+    let mut parts = head.to_vec();
+    for requirement in &section.requirements {
+        parts.push(requirement.id.as_bytes());
+        parts.push(requirement.level.as_bytes());
+        parts.push(requirement.statement.as_bytes());
+    }
+    key(&parts)
+}
+
+/// The encoding of the files a section generates: each file's path and bytes, in the order of
+/// its path, and the identifier of each requirement file among them.
+pub(crate) fn encode_render(generated: &Generated) -> ByteVec {
+    let mut writer = Writer::default();
+    writer.count(generated.tree.files.len());
+    for (path, bytes) in &generated.tree.files {
+        writer.text(path);
+        writer.blob(&bytes.copy_to_bytes());
+        let requirement = generated.requirements.get(path);
+        writer.boolean(requirement.is_some());
+        if let Some(requirement) = requirement {
+            writer.text(requirement);
+        }
+    }
+    ByteVec::from(seal(writer.bytes))
+}
+
+/// The files that `bytes` encode, where they are a whole encoding whose digest holds.
+pub(crate) fn decode_render(bytes: &ByteVec) -> Option<Generated> {
+    let bytes = bytes.copy_to_bytes();
+    let body = unseal(&bytes)?;
+    let mut reader = Reader { bytes: body };
+    let mut generated = Generated::default();
+    for _ in 0..reader.count()? {
+        let path = reader.text()?;
+        let file = ByteVec::from(reader.blob()?);
+        if reader.boolean()? {
+            let requirement = reader.text()?;
+            generated.requirements.insert(path.clone(), requirement);
+        }
+        generated.tree.files.insert(path, file);
+    }
+    reader.bytes.is_empty().then_some(generated)
+}
+
 /// The body followed by its digest.
 fn seal(mut body: Vec<u8>) -> Vec<u8> {
     let digest = sha256::digest(&body);
@@ -145,6 +302,51 @@ impl Writer {
     fn text(&mut self, text: &str) {
         self.count(text.len());
         self.bytes.extend_from_slice(text.as_bytes());
+    }
+
+    /// Bytes after their length in 8 bytes.
+    fn blob(&mut self, bytes: &[u8]) {
+        self.count(bytes.len());
+        self.bytes.extend_from_slice(bytes);
+    }
+
+    /// A formula in prefix order: each node a byte of its kind, then an atom's name or a
+    /// conjunction's or a disjunction's count of parts, then its parts. The walk keeps the nodes
+    /// left to write in a list, so a deeply nested formula doesn't grow the thread's stack.
+    fn formula(&mut self, formula: &Formula) {
+        let mut pending = vec![formula];
+        while let Some(formula) = pending.pop() {
+            match formula {
+                Formula::Atom(name) => {
+                    self.byte(0);
+                    self.text(name);
+                }
+                Formula::Not(inner) => {
+                    self.byte(1);
+                    pending.push(inner);
+                }
+                Formula::And(parts) => {
+                    self.byte(2);
+                    self.count(parts.len());
+                    pending.extend(parts.iter().rev());
+                }
+                Formula::Or(parts) => {
+                    self.byte(3);
+                    self.count(parts.len());
+                    pending.extend(parts.iter().rev());
+                }
+                Formula::Implies(a, b) => {
+                    self.byte(4);
+                    pending.push(b);
+                    pending.push(a);
+                }
+                Formula::Iff(a, b) => {
+                    self.byte(5);
+                    pending.push(b);
+                    pending.push(a);
+                }
+            }
+        }
     }
 
     fn finding(&mut self, finding: &Finding) {
@@ -276,6 +478,11 @@ impl<'a> Reader<'a> {
         String::from_utf8(bytes.to_vec()).ok()
     }
 
+    fn blob(&mut self) -> Option<Vec<u8>> {
+        let count = self.count()?;
+        Some(self.take(count)?.to_vec())
+    }
+
     /// A count, and as many items as it says, each read by `read`.
     fn list<T>(&mut self, mut read: impl FnMut(&mut Self) -> Option<T>) -> Option<Vec<T>> {
         let count = self.count()?;
@@ -364,7 +571,11 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+    use crate::logic::{parse, Condition, Entry, Origin};
+    use crate::render::{generate, Requirement};
 
     /// A value of each kind a TOML file holds.
     const VALUES: &str = r#"
@@ -543,5 +754,215 @@ table = { key = "value", nested = { list = [] } }
         let (ab, c) = (b"ab".as_slice(), b"c".as_slice());
         let (a, bc) = (b"a".as_slice(), b"bc".as_slice());
         assert_ne!(key(&[ab, c]), key(&[a, bc]));
+    }
+
+    /// A formula set of the formulas `texts` and of a condition for each of `atoms`.
+    fn formula_set(texts: &[&str], atoms: &[&str]) -> FormulaSet {
+        let origin = |line: u32| Origin {
+            requirement: "EX-0001-001".to_owned(),
+            file: "rfcs/a.toml".to_owned(),
+            line,
+        };
+        let formulas = texts
+            .iter()
+            .map(|text| Entry {
+                formula: parse(text).expect("the test's formula parses"),
+                origin: origin(1),
+            })
+            .collect();
+        let conditions = atoms
+            .iter()
+            .map(|atom| Condition {
+                atom: (*atom).to_owned(),
+                origin: origin(2),
+            })
+            .collect();
+        FormulaSet {
+            formulas,
+            conditions,
+        }
+    }
+
+    #[test]
+    fn a_formula_encodes_its_shape() {
+        fn atom(name: &str) -> Formula {
+            Formula::atom(name)
+        }
+        let shapes = [
+            Formula::And(vec![atom("a"), Formula::And(vec![atom("b"), atom("c")])]),
+            Formula::And(vec![Formula::And(vec![atom("a"), atom("b")]), atom("c")]),
+            Formula::Or(vec![atom("a"), Formula::And(vec![atom("b"), atom("c")])]),
+            atom("a").implies(atom("b")),
+            atom("b").implies(atom("a")),
+            atom("a").iff(atom("b")),
+            atom("a").not(),
+            atom("ab"),
+            Formula::And(Vec::new()),
+            Formula::Or(Vec::new()),
+        ];
+        let encode = |formula: &Formula| {
+            let mut writer = Writer::default();
+            writer.formula(formula);
+            writer.bytes
+        };
+        let encodings: BTreeSet<Vec<u8>> = shapes.iter().map(encode).collect();
+        assert_eq!(encodings.len(), shapes.len());
+    }
+
+    #[test]
+    fn each_input_of_a_consistency_key_changes_it() {
+        let set = formula_set(&["a -> b", "!(a & c)"], &["a"]);
+        let key = consistency_key(&set);
+        let body = formulas(&set);
+        assert_eq!(
+            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING, &body),
+            key
+        );
+        assert_ne!(
+            consistency_key_of("0.0.0-other", BUILD, CONSISTENCY_ENCODING, &body),
+            key
+        );
+        assert_ne!(
+            consistency_key_of(VERSION, "other build", CONSISTENCY_ENCODING, &body),
+            key
+        );
+        assert_ne!(
+            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING + 1, &body),
+            key
+        );
+        let others = [
+            formula_set(&["a -> b"], &["a"]),
+            formula_set(&["a -> b", "!(a & c)", "c"], &["a"]),
+            formula_set(&["!(a & c)", "a -> b"], &["a"]),
+            formula_set(&["a -> d", "!(a & c)"], &["a"]),
+            formula_set(&["a <-> b", "!(a & c)"], &["a"]),
+            formula_set(&["a -> b", "!(a | c)"], &["a"]),
+            formula_set(&["a -> b", "!(a & c)"], &["b"]),
+            formula_set(&["a -> b", "!(a & c)"], &["a", "a"]),
+            formula_set(&["a -> b", "!(a & c)"], &[]),
+        ];
+        for other in &others {
+            assert_ne!(consistency_key(other), key, "{other:?}");
+        }
+        // Where each formula and condition comes from doesn't change the result or the key.
+        let mut moved = set.clone();
+        moved.formulas[0].origin.line = 9;
+        moved.conditions[0].origin.file = "rfcs/b.toml".to_owned();
+        assert_eq!(consistency_key(&moved), key);
+    }
+
+    #[test]
+    fn a_consistency_result_decodes_where_its_indexes_rise_and_fit() {
+        let artifact = encode_consistency(&[0, 2]);
+        assert_eq!(decode_consistency(&artifact, 3), Some(vec![0, 2]));
+        assert_eq!(decode_consistency(&artifact, 2), None);
+        assert_eq!(
+            decode_consistency(&encode_consistency(&[]), 0),
+            Some(Vec::new())
+        );
+        assert_eq!(decode_consistency(&encode_consistency(&[2, 0]), 3), None);
+        assert_eq!(decode_consistency(&encode_consistency(&[1, 1]), 3), None);
+        let bytes = artifact.copy_to_bytes().to_vec();
+        for end in 0..bytes.len() {
+            let cut = ByteVec::from(bytes[..end].to_vec());
+            assert!(decode_consistency(&cut, 3).is_none(), "{end}");
+        }
+        let mut body = bytes[..bytes.len() - DIGEST].to_vec();
+        body.push(0);
+        assert!(decode_consistency(&ByteVec::from(seal(body)), 3).is_none());
+    }
+
+    const PATHS: Paths<'static> = Paths {
+        rendered: "rendered",
+        requirements: ".duvet/requirements",
+    };
+
+    fn rendered() -> Rendered<'static> {
+        Rendered {
+            rfc: "0001-greetings",
+            name: "01-greeting",
+            anchor: "greeting",
+            title: "Greeting",
+            prose: "A greeting.",
+            requirements: vec![
+                Requirement {
+                    id: "EX-0001-001",
+                    level: "MUST",
+                    statement: "The program MUST greet.",
+                },
+                Requirement {
+                    id: "EX-0001-002",
+                    level: "SHOULD",
+                    statement: "The program SHOULD wave.",
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_render_decodes_to_the_files_it_encodes() {
+        let generated = generate(PATHS, &[rendered()]);
+        assert_eq!(generated.tree.files.len(), 3);
+        assert_eq!(generated.requirements.len(), 2);
+        let artifact = encode_render(&generated);
+        assert_eq!(decode_render(&artifact), Some(generated));
+        let bytes = artifact.copy_to_bytes().to_vec();
+        for end in 0..bytes.len() {
+            let cut = ByteVec::from(bytes[..end].to_vec());
+            assert!(decode_render(&cut).is_none(), "{end}");
+        }
+        let mut body = bytes[..bytes.len() - DIGEST].to_vec();
+        body.push(0);
+        assert!(decode_render(&ByteVec::from(seal(body))).is_none());
+    }
+
+    #[test]
+    fn each_input_of_a_render_key_changes_it() {
+        let section = rendered();
+        let key = render_key(PATHS, &section);
+        assert_eq!(
+            render_key_of(VERSION, BUILD, RENDER_ENCODING, PATHS, &section),
+            key
+        );
+        assert_ne!(
+            render_key_of("0.0.0-other", BUILD, RENDER_ENCODING, PATHS, &section),
+            key
+        );
+        assert_ne!(
+            render_key_of(VERSION, "other build", RENDER_ENCODING, PATHS, &section),
+            key
+        );
+        assert_ne!(
+            render_key_of(VERSION, BUILD, RENDER_ENCODING + 1, PATHS, &section),
+            key
+        );
+        let docs = Paths {
+            rendered: "docs",
+            ..PATHS
+        };
+        assert_ne!(render_key(docs, &section), key);
+        let requirements = Paths {
+            requirements: "requirements",
+            ..PATHS
+        };
+        assert_ne!(render_key(requirements, &section), key);
+        let changes: [fn(&mut Rendered<'static>); 9] = [
+            |section| section.rfc = "0002-farewells",
+            |section| section.name = "02-greeting",
+            |section| section.anchor = "hello",
+            |section| section.title = "Hello",
+            |section| section.prose = "A hello.",
+            |section| section.requirements[0].id = "EX-0001-003",
+            |section| section.requirements[0].level = "SHOULD",
+            |section| section.requirements[1].statement = "The program SHOULD bow.",
+            |section| {
+                section.requirements.pop();
+            },
+        ];
+        for (index, change) in changes.iter().enumerate() {
+            let mut other = rendered();
+            change(&mut other);
+            assert_ne!(render_key(PATHS, &other), key, "{index}");
+        }
     }
 }

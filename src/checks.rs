@@ -17,7 +17,7 @@ use crate::logic::{parse, Condition, Encoding, Entry, Formula, FormulaSet, Origi
 use crate::model::{Block, Field, Set, State};
 use crate::rules::{parse_identifier, RELATION_UNRESOLVED};
 use crate::solver::{Answer, Backend, Lit};
-use crate::Finding;
+use crate::{artifact, Cache, Finding, NoCache};
 
 /// A minimal set of formulas that can't hold together (check 1).
 pub const UNSATISFIABLE: &str = "unsatisfiable";
@@ -53,6 +53,17 @@ const BOUNDS: &[&str] = &["min", "max", "exact"];
 /// Adds a finding for each of checks 1 to 5 that the set breaks, solving with a backend of type
 /// `B`.
 pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
+    check_cached::<B, _>(config, set, &NoCache, findings);
+}
+
+/// Adds a finding for each of checks 1 to 5 that the set breaks, as [`check`] does, reading the
+/// result of checks 1 and 2 from `cache` where it keeps one for the set's formulas.
+pub(crate) fn check_cached<B: Backend + Default, C: Cache>(
+    config: &Config,
+    set: &Set,
+    cache: &C,
+    findings: &mut Vec<Finding>,
+) {
     let mut cx = Context::new(config, set);
     cx.supersede();
     cx.compositions();
@@ -67,7 +78,7 @@ pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Ve
     }
     cx.cycles();
     cx.polarity();
-    cx.solve::<B>();
+    cx.solve::<B, _>(cache);
     findings.append(&mut cx.found);
 }
 
@@ -516,9 +527,9 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Runs checks 1 and 2 over the formula set.
-    fn solve<B: Backend + Default>(&mut self) {
-        let found = consistency::<B>(&self.set);
+    /// Runs checks 1 and 2 over the formula set, or reads their result from `cache`.
+    fn solve<B: Backend + Default, C: Cache>(&mut self, cache: &C) {
+        let found = cached_consistency::<B, _>(&self.set, cache);
         let formulas = &self.set.formulas;
         let place = |entry: &Entry| {
             let (file, line) = (&entry.origin.file, entry.origin.line);
@@ -912,6 +923,34 @@ pub fn consistency<B: Backend + Default>(set: &FormulaSet) -> Consistency {
     Consistency { conflict, vacuous }
 }
 
+/// The result of checks 1 and 2 over `set`, as [`consistency`] returns it, read from `cache` where
+/// it keeps one for the set's formulas and conditions. Only a result without a conflict is kept:
+/// its conditions that can't hold are the same under every backend, while a conflict's minimal
+/// subset starts from the backend's core.
+pub(crate) fn cached_consistency<B: Backend + Default, C: Cache>(
+    set: &FormulaSet,
+    cache: &C,
+) -> Consistency {
+    if !cache.keeps() {
+        return consistency::<B>(set);
+    }
+    let key = artifact::consistency_key(set);
+    let conditions = set.conditions.len();
+    let kept = cache.get(&key);
+    let vacuous = kept.and_then(|bytes| artifact::decode_consistency(&bytes, conditions));
+    if let Some(vacuous) = vacuous {
+        return Consistency {
+            conflict: None,
+            vacuous,
+        };
+    }
+    let found = consistency::<B>(set);
+    if found.conflict.is_none() {
+        cache.put(key, artifact::encode_consistency(&found.vacuous));
+    }
+    found
+}
+
 /// A minimal subset of the formulas that contradict each other, by their indexes. It starts
 /// from the formulas of the backend's core, and leaves out one formula at a time, keeping each
 /// removal that leaves the rest contradictory. Each later core narrows the candidates again.
@@ -949,9 +988,13 @@ fn narrow(
 
 #[cfg(test)]
 mod tests {
-    use super::{consistency, Consistency};
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+
+    use super::{cached_consistency, consistency, Consistency};
     use crate::logic::{parse, Condition, Entry, FormulaSet, Origin};
     use crate::solver::{Answer, Backend, Lit};
+    use crate::{ByteVec, Cache, Key};
 
     fn origin(requirement: &str) -> Origin {
         Origin {
@@ -1090,8 +1133,46 @@ mod tests {
         assert_eq!(SOLVES.with(std::cell::Cell::get), 3);
     }
 
+    /// A cache that keeps each artifact in memory.
+    #[derive(Default)]
+    struct Memory(RefCell<BTreeMap<Key, ByteVec>>);
+
+    impl Cache for Memory {
+        fn get(&self, key: &Key) -> Option<ByteVec> {
+            self.0.borrow().get(key).cloned()
+        }
+
+        fn put(&self, key: Key, artifact: ByteVec) {
+            self.0.borrow_mut().insert(key, artifact);
+        }
+    }
+
+    fn a_consistent_result_is_read_from_the_cache<B: Backend + Default>() {
+        let cache = Memory::default();
+        let consistent = set(&["e -> f", "e -> !f"], &["e", "f"]);
+        let found = cached_consistency::<B, _>(&consistent, &cache);
+        assert_eq!(found, consistency::<B>(&consistent));
+        assert_eq!(found.vacuous, vec![0]);
+        assert_eq!(cache.0.borrow().len(), 1);
+        SOLVES.with(|count| count.set(0));
+        let read = cached_consistency::<Counted<B>, _>(&consistent, &cache);
+        assert_eq!(read, found);
+        assert_eq!(SOLVES.with(std::cell::Cell::get), 0);
+    }
+
+    fn a_conflict_isnt_kept<B: Backend + Default>() {
+        let cache = Memory::default();
+        let conflicting = set(&["a", "!a"], &["a"]);
+        let found = cached_consistency::<B, _>(&conflicting, &cache);
+        assert_eq!(found, consistency::<B>(&conflicting));
+        assert!(found.conflict.is_some());
+        assert!(cache.0.borrow().is_empty());
+    }
+
     crate::solver::backend_tests!(
         empty_set,
+        a_consistent_result_is_read_from_the_cache,
+        a_conflict_isnt_kept,
         one_solve_per_distinct_atom,
         consistent_set,
         conflict_is_minimal,

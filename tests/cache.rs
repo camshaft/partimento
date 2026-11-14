@@ -1,5 +1,7 @@
 //! A check with a cache returns the report of a check without one, before and after a change to
-//! one section file, and reads each section file that didn't change from the cache.
+//! one section file, and reads from the cache each section file that didn't change, the result of
+//! checks 1 and 2 where the formulas didn't change, and the generated files of each section that
+//! didn't change.
 //!
 //! The fixture's files are embedded at compile time, so the library's tests read no file and run
 //! on wasm32 too.
@@ -143,10 +145,12 @@ fn a_second_check_reads_each_section_from_the_cache() {
     let expected = uncached(&tree);
     assert!(expected.failed());
     assert_eq!(cached(&tree, &cache), expected);
-    assert_eq!(cache.kept.borrow().len(), 2);
+    // The two section files' loads and the result of checks 1 and 2: the fixture breaks a format
+    // rule, so it doesn't render.
+    assert_eq!(cache.kept.borrow().len(), 3);
     assert_eq!(cache.returned.get(), 0);
     assert_eq!(cached(&tree, &cache), expected);
-    assert_eq!(cache.returned.get(), 2);
+    assert_eq!(cache.returned.get(), 3);
 }
 
 #[test]
@@ -158,9 +162,51 @@ fn a_check_after_a_change_to_one_section_returns_the_report_without_the_cache() 
     let after = cached(&changed, &cache);
     assert_eq!(after, uncached(&changed));
     assert_ne!(after, before);
-    // The check read 01-greeting.toml from the cache, and 02-farewell.toml from the tree.
+    // The check read 01-greeting.toml from the cache, and 02-farewell.toml from the tree. The
+    // changed identifier changes the formulas, so checks 1 and 2 ran again, and the changed set
+    // passes the format rules, so each of its two sections rendered.
     assert_eq!(cache.returned.get(), 1);
-    assert_eq!(cache.kept.borrow().len(), 3);
+    assert_eq!(cache.kept.borrow().len(), 7);
+}
+
+/// The fixture with its second section's identifier changed, so that the set passes the format
+/// rules, and with the files a render of that set writes.
+fn rendered() -> Tree {
+    let farewell = text(FAREWELL).replace("EX-0001-001", "EX-0001-002");
+    let mut tree = with_file(FAREWELL, farewell);
+    let generated = partimento::render(&tree).expect("the set renders");
+    tree.files.extend(generated.files);
+    tree
+}
+
+#[test]
+fn a_check_after_a_change_to_one_section_reads_the_other_artifacts_from_the_cache() {
+    let (tree, cache) = (rendered(), Memory::default());
+    let drift = |finding: &Finding| finding.rule == "drift";
+    let before = cached(&tree, &cache);
+    assert_eq!(before, uncached(&tree));
+    assert!(!before.findings.iter().any(drift));
+    // The two section files' loads, the result of checks 1 and 2, and each section's files.
+    assert_eq!(cache.kept.borrow().len(), 5);
+    let farewell = text(FAREWELL)
+        .replace("EX-0001-001", "EX-0001-002")
+        .replace("title = \"Farewell\"", "title = \"Goodbye\"");
+    let mut changed = tree.clone();
+    changed
+        .files
+        .insert(FAREWELL.to_string(), ByteVec::from(farewell));
+    let after = cached(&changed, &cache);
+    assert_eq!(after, uncached(&changed));
+    let changed_text = |finding: &Finding| finding.file.ends_with("/02-farewell.md");
+    assert!(after
+        .findings
+        .iter()
+        .any(|finding| drift(finding) && changed_text(finding)));
+    // The check read 01-greeting.toml's load and files, and the result of checks 1 and 2, whose
+    // formulas a title doesn't change, from the cache, and built 02-farewell.toml's load and
+    // files again.
+    assert_eq!(cache.returned.get(), 3);
+    assert_eq!(cache.kept.borrow().len(), 7);
 }
 
 #[test]
@@ -173,7 +219,8 @@ fn a_file_that_doesnt_parse_reports_the_same_findings_from_the_cache() {
     assert!(expected.findings.iter().any(in_broken));
     assert_eq!(cached(&tree, &cache), expected);
     assert_eq!(cached(&tree, &cache), expected);
-    assert_eq!(cache.returned.get(), 3);
+    // The three section files' loads and the result of checks 1 and 2.
+    assert_eq!(cache.returned.get(), 4);
 }
 
 #[test]
@@ -187,7 +234,7 @@ fn a_damaged_artifact_is_read_from_the_file_again() {
         };
         assert_eq!(cached(&tree, &cache), expected);
         assert_eq!(cached(&tree, &cache), expected);
-        assert_eq!(cache.kept.returned.get(), 2);
+        assert_eq!(cache.kept.returned.get(), 3);
     }
 }
 
@@ -253,7 +300,7 @@ mod binary {
         let expected = include_str!("fixtures/02-duplicate-identifier/expected.txt");
         assert_eq!(String::from_utf8_lossy(&first.stdout), expected);
         assert_eq!(first.status.code(), Some(1));
-        assert_eq!(kept(&cache).len(), 2);
+        assert_eq!(kept(&cache).len(), 3);
         let second = check(&cache);
         assert_eq!(second.stdout, first.stdout);
         assert_eq!(second.status.code(), Some(1));

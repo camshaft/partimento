@@ -200,10 +200,11 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     // checked only once its format rules pass.
     if let Some((config, set)) = load(tree, cache, &mut findings) {
         let renders = !fails(&findings);
-        checks::check::<B>(&config, &set, &mut findings);
+        checks::check_cached::<B, C>(&config, &set, cache, &mut findings);
         if renders {
             let paths = render::Paths::of(&config.paths);
-            let generated = render::generate(paths, &render::sections(&set));
+            let sections = render::sections(&set);
+            let generated = render::generate_cached(paths, &sections, cache);
             findings.extend(render::drift(paths, tree, &generated));
         }
     }
