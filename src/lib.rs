@@ -10,11 +10,16 @@ use std::fmt;
 pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
+pub mod checks;
 pub mod config;
+pub mod logic;
 pub mod model;
 pub mod rules;
 pub mod solver;
 mod source;
+
+#[cfg(not(any(feature = "batsat", feature = "varisat")))]
+compile_error!("enable a solver backend: the `batsat` feature or the `varisat` feature");
 
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
@@ -165,9 +170,9 @@ pub fn check<B: solver::Backend + Default>(tree: &Tree, options: &Options) -> Re
     check_cached::<B, NoCache>(tree, options, &NoCache)
 }
 
-/// Checks the tree with the default backend.
+/// Checks the tree with the default backend: batsat where its feature is on, else varisat.
 pub fn check_default(tree: &Tree, options: &Options) -> Report {
-    check::<solver::FormatOnly>(tree, options)
+    check::<solver::DefaultBackend>(tree, options)
 }
 
 /// Checks the tree with the solver backend `B`, keeping the artifacts it builds in `cache`.
@@ -176,12 +181,13 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     options: &Options,
     cache: &C,
 ) -> Report {
-    // The artifacts that a cache keeps come with the solver backends.
+    // No artifact is cached yet: each check builds every artifact again.
     let _ = cache;
     let mut findings = Vec::new();
     if let Some(config) = config::load(tree, &mut findings) {
         let set = model::load(tree, &config, &mut findings);
         rules::check(&config, &set, &mut findings);
+        checks::check::<B>(&config, &set, &mut findings);
     }
     if options.final_pass {
         for finding in &mut findings {
