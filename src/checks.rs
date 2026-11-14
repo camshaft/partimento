@@ -1130,13 +1130,19 @@ mod tests {
     }
 
     /// The atoms of a formula of 100,000 nested `!`, and of one of 100,000 nested parentheses,
-    /// found without overflowing the stack.
+    /// found without overflowing the stack, and the atoms of each part of an `exactly_one(...)`
+    /// call, a negated part among them.
     #[test]
     fn names_of_a_deep_formula() {
         const DEPTH: usize = 100_000;
         let negation = format!("{}a", "!".repeat(DEPTH));
         let parentheses = format!("{}a{}", "(b & ".repeat(DEPTH), ")".repeat(DEPTH));
-        for (text, atoms) in [(negation, vec!["a"]), (parentheses, vec!["a", "b"])] {
+        let call = "exactly_one(a, b, !c)".to_owned();
+        for (text, atoms) in [
+            (negation, vec!["a"]),
+            (parentheses, vec!["a", "b"]),
+            (call, vec!["a", "b", "c"]),
+        ] {
             let mut names = BTreeSet::new();
             names_of(&parse(&text).unwrap(), &mut names);
             assert_eq!(names.iter().map(String::as_str).collect::<Vec<_>>(), atoms);
