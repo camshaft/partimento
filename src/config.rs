@@ -134,7 +134,8 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
     };
     let text = source::text(FILE, bytes, findings)?;
     let raw: Raw = source::parse(FILE, &text, findings)?;
-    let line = |span: Range<usize>| source::line_of(text.as_bytes(), span.start);
+    let lines = source::Lines::new(text.as_bytes());
+    let line = |span: Range<usize>| lines.line(span.start);
     let before = findings.len();
 
     let prefix = raw.prefix.get_ref();
@@ -215,4 +216,46 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         contracts: raw.contracts.map(Spanned::into_inner),
         implementation_terms: raw.implementation_terms,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{load, FILE};
+    use crate::{ByteVec, Tree};
+
+    /// A configuration whose levels, on line 1, hold a lowercase word, whose prefix, on line 3,
+    /// isn't letters and digits, and whose system named on line 12 has RFC numbers that run down.
+    const SPEC: &str = r#"levels = ["MUST", "must"]
+
+prefix = "E-X"
+
+[paths]
+rfcs = "rfcs"
+rendered = "rendered"
+requirements = "requirements"
+
+[[system]]
+first = 9
+name = "core"
+last = 1
+"#;
+
+    #[test]
+    fn each_finding_is_at_the_line_of_the_value_it_is_about() {
+        let mut tree = Tree::default();
+        let bytes = ByteVec::from(SPEC.to_string());
+        tree.files.insert(FILE.to_string(), bytes);
+        let mut findings = Vec::new();
+        assert!(load(&tree, &mut findings).is_none());
+        let found: Vec<(u32, &str)> = findings
+            .iter()
+            .map(|finding| (finding.line, finding.message.as_str()))
+            .collect();
+        let expected = [
+            (3, "the prefix `E-X` isn't ASCII letters and digits"),
+            (1, "the level `must` isn't an uppercase word other than NOT"),
+            (12, "the RFC numbers of system `core` run from 9 down to 1"),
+        ];
+        assert_eq!(found, expected);
+    }
 }
