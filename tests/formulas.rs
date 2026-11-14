@@ -271,7 +271,10 @@ mod binary {
     #[test]
     fn formulas_without_a_file_exits_with_2() {
         let dir = scratch("formulas-missing");
-        for args in [&["check", "--formulas"][..], &["check", "--formulas", "--root", "tree"]] {
+        for args in [
+            &["check", "--formulas"][..],
+            &["check", "--formulas", "--root", "tree"],
+        ] {
             let output = run(&dir, args);
             assert_eq!(output.status.code(), Some(2), "{args:?}");
             assert!(output.stdout.is_empty(), "{args:?}");
@@ -294,7 +297,10 @@ mod binary {
         // The check ran and its write failed: stderr holds the write's error alone, without the
         // usage text an argument error prints.
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.starts_with("partimento: formulas.json: "), "{stderr}");
+        assert!(
+            stderr.starts_with("partimento: formulas.json: "),
+            "{stderr}"
+        );
         assert_eq!(stderr.lines().count(), 1, "{stderr}");
     }
 }
