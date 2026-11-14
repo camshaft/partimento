@@ -310,9 +310,10 @@ impl Writer {
         self.bytes.extend_from_slice(bytes);
     }
 
-    /// A formula in prefix order: each node a byte of its kind, then an atom's name or a
-    /// conjunction's or a disjunction's count of parts, then its parts. The walk keeps the nodes
-    /// left to write in a list, so a deeply nested formula doesn't grow the thread's stack.
+    /// A formula in prefix order: each node a byte of its kind, then an atom's name or the count
+    /// of parts of a conjunction, a disjunction or an `exactly_one`, then its parts. The walk
+    /// keeps the nodes left to write in a list, so a deeply nested formula doesn't grow the
+    /// thread's stack.
     fn formula(&mut self, formula: &Formula) {
         let mut pending = vec![formula];
         while let Some(formula) = pending.pop() {
@@ -332,6 +333,11 @@ impl Writer {
                 }
                 Formula::Or(parts) => {
                     self.byte(3);
+                    self.count(parts.len());
+                    pending.extend(parts.iter().rev());
+                }
+                Formula::ExactlyOne(parts) => {
+                    self.byte(6);
                     self.count(parts.len());
                     pending.extend(parts.iter().rev());
                 }
@@ -792,6 +798,7 @@ table = { key = "value", nested = { list = [] } }
             Formula::And(vec![atom("a"), Formula::And(vec![atom("b"), atom("c")])]),
             Formula::And(vec![Formula::And(vec![atom("a"), atom("b")]), atom("c")]),
             Formula::Or(vec![atom("a"), Formula::And(vec![atom("b"), atom("c")])]),
+            Formula::ExactlyOne(vec![atom("a"), Formula::And(vec![atom("b"), atom("c")])]),
             atom("a").implies(atom("b")),
             atom("b").implies(atom("a")),
             atom("a").iff(atom("b")),
