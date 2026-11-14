@@ -140,6 +140,35 @@ fn a_path_that_leaves_the_tree_fails_at_spec_toml() {
     assert_eq!(lines(&report), FIXTURES[1].expected);
 }
 
+/// Fixture 05-key-word's tree with the `[paths]` key `key` of its spec.toml set to `value`.
+fn with_path(key: &str, value: &str) -> Tree {
+    let mut tree = tree(&FIXTURES[1]);
+    let spec = include_str!("fixtures/05-key-word/spec.toml");
+    let prefix = format!("{key} = ");
+    let line = spec.lines().find(|text| text.starts_with(&prefix));
+    let line = line.expect("spec.toml sets the key");
+    let spec = spec.replace(line, &format!("{key} = {value:?}"));
+    tree.files
+        .insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree
+}
+
+#[test]
+fn each_path_that_leaves_the_tree_fails_at_its_key() {
+    // The lines of fixture 05-key-word's spec.toml that set the three keys.
+    for (key, line) in [("rfcs", 6), ("rendered", 7), ("requirements", 8)] {
+        let report = partimento::check_default(&with_path(key, "../.."), &Options::default());
+        assert_eq!(report.findings.len(), 1, "{key}: {}", lines(&report));
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule, "config", "{key}");
+        assert_eq!(finding.file, "spec.toml", "{key}");
+        assert_eq!(finding.line, line, "{key}");
+        let message = format!("`paths.{key}` is `../..`");
+        assert!(finding.to_string().contains(&message), "{key}: {finding}");
+        assert!(report.failed(), "{key}");
+    }
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};
@@ -289,5 +318,16 @@ mod binary {
         std::fs::rename(dir.join("rfcs"), target.join("rfcs")).expect("the directory is moved");
         symlink(&target, dir.join("docs")).expect("the link is made");
         exits_with_2(&dir, "docs: a symbolic link");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_entry_that_is_neither_a_file_nor_a_directory_exits_with_2() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = scratch("socket-entry");
+        write_fixture(&dir);
+        let _socket = UnixListener::bind(dir.join("rfcs/socket")).expect("the socket is made");
+        exits_with_2(&dir, "socket: neither a file nor a directory");
     }
 }
