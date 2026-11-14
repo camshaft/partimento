@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/camshaft/partimento/compare/v0.1.0...v0.2.0) - 2026-11-14
+
+### Other
+
+- Describe check --formulas in the README ([#58](https://github.com/camshaft/partimento/pull/58))
+- Test that the formula set's JSON writes a formula of 100,000 nested `!` ([#57](https://github.com/camshaft/partimento/pull/57))
+- Compare and debug-print logic formulas without recursion ([#56](https://github.com/camshaft/partimento/pull/56))
+- Keep a conflicting consistency result in the cache ([#54](https://github.com/camshaft/partimento/pull/54))
+- Add check --formulas and a timing test of 2,500 generated requirements ([#50](https://github.com/camshaft/partimento/pull/50))
+- Hold the toml crate's loads of fixed probes in each section file's key ([#51](https://github.com/camshaft/partimento/pull/51))
+- Test deep at_least_one calls and long implication chains ([#52](https://github.com/camshaft/partimento/pull/52))
+- pin the parser's results for chains, n-ary groups and errors in calls ([#53](https://github.com/camshaft/partimento/pull/53))
+- Test the render artifact's fallback and keeps() gate over a tree that renders ([#48](https://github.com/camshaft/partimento/pull/48))
+- Parse and walk logic formulas without recursion ([#46](https://github.com/camshaft/partimento/pull/46))
+- Hold Cargo.toml in the build identity ([#47](https://github.com/camshaft/partimento/pull/47))
+- Keep the solver's and the render's artifacts in the cache ([#45](https://github.com/camshaft/partimento/pull/45))
+
 ## [0.1.0](https://github.com/camshaft/partimento/compare/v0.0.0...v0.1.0) - 2026-11-14
 
 ### Other
