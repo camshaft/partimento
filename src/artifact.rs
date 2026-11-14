@@ -488,7 +488,10 @@ table = { key = "value", nested = { list = [] } }
         assert_ne!(load_key("0.0.0-other", BUILD, ENCODING, file, bytes), key);
         assert_ne!(load_key(VERSION, "other build", ENCODING, file, bytes), key);
         assert_ne!(load_key(VERSION, BUILD, ENCODING + 1, file, bytes), key);
-        assert_ne!(load_key(VERSION, BUILD, ENCODING, "rfcs/b.toml", bytes), key);
+        assert_ne!(
+            load_key(VERSION, BUILD, ENCODING, "rfcs/b.toml", bytes),
+            key
+        );
         assert_ne!(load_key(VERSION, BUILD, ENCODING, file, b"id = 2\n"), key);
         let text = ByteVec::from(bytes.to_vec());
         assert_eq!(section_key(file, &text), key);
