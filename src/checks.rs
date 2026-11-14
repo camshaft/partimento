@@ -4,9 +4,9 @@
 //! requirement can hold while they do, read the formula set through [`Encoding`] and a
 //! [`Backend`] alone, so they run the same under each backend. The other checks read the
 //! requirements alone: each relation's target, the boundary between systems, cycles of
-//! `implies` and `refines`, a required requirement whose relations lead to a forbidden one, and
-//! the bounds of each parameter. The composition, `logic` and `params` fields are checked as
-//! the formula set is built.
+//! `implies` and `refines`, cycles of `supersedes`, a required requirement whose relations lead
+//! to a forbidden one, and the bounds of each parameter. The composition, `logic` and `params`
+//! fields are checked as the formula set is built.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,7 +25,8 @@ pub const UNSATISFIABLE: &str = "unsatisfiable";
 pub const CONDITION_VACUOUS: &str = "condition-vacuous";
 /// A relation, a part, a condition or a formula's atom that crosses from one system to another.
 pub const SYSTEM_BOUNDARY: &str = "system-boundary";
-/// A relation that doesn't hold a `kind` and a `target`, or whose kind isn't one.
+/// A relation that doesn't hold a `kind` and a `target`, or whose kind isn't one, and each
+/// requirement of a cycle of `supersedes` relations.
 pub const RELATION: &str = "relation";
 /// A relation's target, a part, a condition or a formula's atom that doesn't resolve.
 pub const RELATION_TARGET: &str = "relation-target";
@@ -554,7 +555,11 @@ impl<'a> Context<'a> {
 
     /// Finds each held requirement that a held requirement's `supersedes` relation retires,
     /// before any requirement is built, so the checks read only the requirements in force.
+    /// Each requirement of a cycle of `supersedes` relations, a requirement that supersedes
+    /// itself among them, gets a finding, since the cycle retires each of them and nothing
+    /// replaces them.
     fn supersede(&mut self) {
+        let mut edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
         for (index, &r) in self.requirements.iter().enumerate() {
             if self.held.get(r.id) != Some(&index) {
                 continue;
@@ -569,7 +574,33 @@ impl<'a> Context<'a> {
                 };
                 if self.held.contains_key(target) {
                     self.superseded.insert(target);
+                    edges.entry(r.id).or_default().insert(target);
                 }
+            }
+        }
+        for component in components(&edges) {
+            let first = component[0];
+            let itself = edges
+                .get(first)
+                .is_some_and(|targets| targets.contains(first));
+            let message = if component.len() > 1 {
+                let members: Vec<String> = component.iter().map(|id| format!("`{id}`")).collect();
+                let members = members.join(", ");
+                format!(
+                    "`supersedes` relations form a cycle through {members}, so each of them is \
+                     retired and nothing replaces them"
+                )
+            } else if itself {
+                format!("`{first}` supersedes itself, so it is retired and nothing replaces it")
+            } else {
+                continue;
+            };
+            for id in component {
+                let Some(&index) = self.held.get(id) else {
+                    continue;
+                };
+                let r = self.requirements[index];
+                self.error(RELATION, r, line_of(r.block, "relations"), message.clone());
             }
         }
     }
