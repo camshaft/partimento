@@ -9,6 +9,10 @@ use std::collections::BTreeMap;
 pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
+pub mod checks;
+pub mod logic;
+pub mod solver;
+
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
