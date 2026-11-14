@@ -53,13 +53,16 @@ const BOUNDS: &[&str] = &["min", "max", "exact"];
 /// `B`.
 pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
     let mut cx = Context::new(config, set);
+    cx.supersede();
     for index in 0..cx.requirements.len() {
         let requirement = cx.requirements[index];
-        if cx.held.get(requirement.id) == Some(&index) {
+        let held = cx.held.get(requirement.id) == Some(&index);
+        // A requirement that a `supersedes` relation retires isn't built, so none of its
+        // fields reaches a check.
+        if held && !cx.superseded.contains(requirement.id) {
             cx.build(requirement);
         }
     }
-    cx.retire();
     cx.cycles();
     cx.polarity();
     cx.solve::<B>();
@@ -288,9 +291,6 @@ impl<'a> Context<'a> {
             let noun = "the relation's target";
             self.resolve(r, target, noun, line, kind == "supersedes");
             if kind == "supersedes" {
-                if self.held.contains_key(target) {
-                    self.superseded.insert(target);
-                }
                 continue;
             }
             self.boundary(r, target, noun, line);
@@ -561,17 +561,26 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Leaves out the formulas, the conditions and the relations of each requirement that a
-    /// `supersedes` relation retires, so the set holds only the requirements in force.
-    fn retire(&mut self) {
-        let superseded = &self.superseded;
-        let live = |origin: &Origin| !superseded.contains(origin.requirement.as_str());
-        self.set.formulas.retain(|entry| live(&entry.origin));
-        self.set
-            .conditions
-            .retain(|condition| live(&condition.origin));
-        self.leads.retain(|id, _| !superseded.contains(id));
-        self.cycle.retain(|id, _| !superseded.contains(id));
+    /// Finds each held requirement that a held requirement's `supersedes` relation retires,
+    /// before any requirement is built, so the checks read only the requirements in force.
+    fn supersede(&mut self) {
+        for (index, &r) in self.requirements.iter().enumerate() {
+            if self.held.get(r.id) != Some(&index) {
+                continue;
+            }
+            let Some(field) = r.block.field("relations") else {
+                continue;
+            };
+            for item in field.value.as_array().into_iter().flatten() {
+                let kind = text(item, "kind");
+                let (Some("supersedes"), Some(target)) = (kind, text(item, "target")) else {
+                    continue;
+                };
+                if self.held.contains_key(target) {
+                    self.superseded.insert(target);
+                }
+            }
+        }
     }
 
     fn push(&mut self, formula: Formula, r: Requirement<'a>, line: u32) {

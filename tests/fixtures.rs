@@ -79,6 +79,7 @@ const FIXTURES: &[Fixture] = &[
     fixture!("21-polarity-conflict"),
     fixture!("22-malformed-formulas"),
     fixture!("23-supersedes"),
+    fixture!("25-supersedes-bound"),
     fixture!(
         "24-contract-logic";
         "spec.toml",
