@@ -1093,10 +1093,12 @@ mod tests {
         assert!(clauses <= 8 * PARTS, "{clauses} clauses for {PARTS} parts");
         assert!(!sat(&mut encoding, &assume(&names, &[])));
         for part in [0, PARTS / 2, PARTS - 1] {
-            assert!(sat(&mut encoding, &assume(&names, &[part])), "P{part} alone");
+            let found = sat(&mut encoding, &assume(&names, &[part]));
+            assert!(found, "P{part} alone");
         }
         assert!(!sat(&mut encoding, &assume(&names, &[0, PARTS - 1])));
-        assert!(!sat(&mut encoding, &assume(&names, &[PARTS / 2, PARTS / 2 + 1])));
+        let neighbors = assume(&names, &[PARTS / 2, PARTS / 2 + 1]);
+        assert!(!sat(&mut encoding, &neighbors));
     }
 
     /// An `exactly_one(B, ...)` nested `DEPTH` deep reads, prints, clones, drops and encodes
@@ -1121,8 +1123,9 @@ mod tests {
         assert!(clauses <= 10 * DEPTH, "{clauses} clauses for {DEPTH} calls");
         for x in [false, true] {
             for y in [false, true] {
-                let holds = if DEPTH % 2 == 0 { x } else { x != y };
-                assert_eq!(sat(&mut encoding, &[("A", x), ("B", y)]), holds, "A={x} B={y}");
+                let holds = if DEPTH.is_multiple_of(2) { x } else { x != y };
+                let found = sat(&mut encoding, &[("A", x), ("B", y)]);
+                assert_eq!(found, holds, "A={x} B={y}");
             }
         }
     }
