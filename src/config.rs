@@ -34,7 +34,8 @@ pub struct Config {
 }
 
 /// The directories of the set, relative to the root of the tree, each with its parts joined by
-/// `/` and none of them empty, `.` or `..`, as `load` checks.
+/// `/` and none of them empty, `.` or `..`, and none of the three the same as another or under
+/// another, as `load` checks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paths {
     /// The RFC sources: the index and one directory for each RFC.
@@ -125,6 +126,17 @@ fn in_tree(path: &str) -> bool {
     !path.contains(['\\', ':']) && path.split('/').all(plain)
 }
 
+/// Whether two directories of the tree are the same, or one is under the other.
+fn nested(a: &str, b: &str) -> bool {
+    a == b || under(a, b) || under(b, a)
+}
+
+/// Whether the directory `inner` is under the directory `outer`.
+fn under(inner: &str, outer: &str) -> bool {
+    let rest = inner.strip_prefix(outer);
+    rest.is_some_and(|rest| rest.starts_with('/'))
+}
+
 /// Reads the configuration from the tree, or adds the findings that say why it can't.
 pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
     let Some(bytes) = tree.files.get(FILE) else {
@@ -168,12 +180,23 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         ("rendered", &paths.rendered),
         ("requirements", &paths.requirements),
     ];
-    for (key, path) in keys {
+    for (index, (key, path)) in keys.iter().enumerate() {
         let value = path.get_ref();
         if !in_tree(value) {
             let message =
                 format!("`paths.{key}` is `{value}`, which isn't a directory of the tree");
             findings.push(Finding::error(RULE, FILE, line(path.span()), None, message));
+            continue;
+        }
+        // A file under two of the directories would be read as a source and as a generated file.
+        for (other, other_path) in &keys[..index] {
+            let other_value = other_path.get_ref();
+            if in_tree(other_value) && nested(value, other_value) {
+                let message = format!(
+                    "`paths.{key}` is `{value}`, which overlaps `paths.{other}`, `{other_value}`"
+                );
+                findings.push(Finding::error(RULE, FILE, line(path.span()), None, message));
+            }
         }
     }
 

@@ -1,0 +1,11 @@
+[section]
+anchor = "reply"
+title = "Reply"
+problem = "A person who answers the greeting doesn't know that the program heard it."
+motivation = "A reply tells the person that the program heard the answer."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD reply to each answer within a second."

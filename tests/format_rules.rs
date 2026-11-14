@@ -30,8 +30,8 @@ const FILES: &[(&str, &str)] = &[
     ("rfcs/0001-greetings/02-broken.toml", BROKEN),
 ];
 
-/// A tree that breaks no rule: the fixture's files without 02-broken.toml, and an rfc.toml that
-/// retires nothing.
+/// The sources of a tree that doesn't break a rule: the fixture's files without 02-broken.toml,
+/// and an rfc.toml that retires nothing. `clean` adds the files that `partimento render` generates.
 const CLEAN: &[(&str, &str)] = &[
     ("spec.toml", SPEC),
     ("rfcs/index.toml", INDEX),
@@ -98,6 +98,14 @@ fn check(files: &[(&str, &str)]) -> Report {
     partimento::check_default(&tree(files), &Options::default())
 }
 
+/// `CLEAN` with the files that `partimento render` generates for it, which the drift rule asks for.
+fn clean() -> Tree {
+    let mut clean = tree(CLEAN);
+    let generated = partimento::render(&clean).expect("CLEAN renders");
+    clean.files.extend(generated.files);
+    clean
+}
+
 /// The findings as the command prints them, one a line.
 fn lines(report: &Report) -> String {
     let mut text = String::new();
@@ -157,7 +165,7 @@ fn each_configuration_case_fails_at_its_line() {
 
 #[test]
 fn a_tree_that_breaks_no_rule_has_no_finding() {
-    let report = check(CLEAN);
+    let report = partimento::check_default(&clean(), &Options::default());
     assert!(report.findings.is_empty(), "{}", lines(&report));
     assert!(!report.failed());
 }
@@ -167,7 +175,9 @@ mod binary {
     use std::path::{Path, PathBuf};
     use std::process::{Command, Output};
 
-    use super::{CLEAN, EXPECTED};
+    use partimento::Tree;
+
+    use super::{clean, EXPECTED};
 
     fn root(name: &str) -> PathBuf {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -188,13 +198,14 @@ mod binary {
         dir
     }
 
-    /// Writes the files into `dir`, each at its path in the tree.
-    fn write(dir: &Path, files: &[(&str, &str)]) {
-        for (path, text) in files {
+    /// Writes the tree's files into `dir`, each at its path in the tree.
+    fn write(dir: &Path, tree: &Tree) {
+        for (path, bytes) in &tree.files {
             let file = dir.join(path);
             let parent = file.parent().expect("the file is in a directory");
             std::fs::create_dir_all(parent).expect("the directory is made");
-            std::fs::write(file, text).expect("the file is written");
+            let data = bytes.copy_to_bytes().to_vec();
+            std::fs::write(file, data).expect("the file is written");
         }
     }
 
@@ -220,7 +231,7 @@ mod binary {
     #[test]
     fn a_tree_that_breaks_no_rule_prints_nothing_and_an_empty_array() {
         let dir = scratch("format-rules-clean");
-        write(&dir, CLEAN);
+        write(&dir, &clean());
         let dir = dir.to_str().expect("the path is UTF-8");
         let output = run(&["check", "--root", dir]);
         assert_eq!(String::from_utf8_lossy(&output.stdout), "");
@@ -237,7 +248,7 @@ mod binary {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = scratch("format-rules-unreadable");
-        write(&dir, CLEAN);
+        write(&dir, &clean());
         let file = dir.join("rfcs/0001-greetings/01-greeting.toml");
         std::fs::set_permissions(&file, Permissions::from_mode(0o000)).expect("the mode is set");
         // A process that reads every file, such as one run as root, can't see the refusal.

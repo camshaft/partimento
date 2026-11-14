@@ -1,0 +1,5 @@
+target = "rendered/0001-greetings/01-greeting.md#EX-0001-001"
+
+[[spec]]
+level = "MUST"
+quote = "The program MUST print a greeting when it starts."
