@@ -1,0 +1,3 @@
+error[unsatisfiable] rfcs/0001-greetings/01-greeting.toml:16: EX-0001-002: `EX-0001-002` can't hold together with `EX-0001-005` at rfcs/0001-greetings/01-greeting.toml:35, `!(EX-0001-005 & EX-0001-002)` at rfcs/0001-greetings/01-greeting.toml:39
+error[unsatisfiable] rfcs/0001-greetings/01-greeting.toml:35: EX-0001-005: `EX-0001-005` can't hold together with `EX-0001-002` at rfcs/0001-greetings/01-greeting.toml:16, `!(EX-0001-005 & EX-0001-002)` at rfcs/0001-greetings/01-greeting.toml:39
+error[unsatisfiable] rfcs/0001-greetings/01-greeting.toml:39: EX-0001-005: `!(EX-0001-005 & EX-0001-002)` can't hold together with `EX-0001-002` at rfcs/0001-greetings/01-greeting.toml:16, `EX-0001-005` at rfcs/0001-greetings/01-greeting.toml:35

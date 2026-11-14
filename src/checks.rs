@@ -54,6 +54,7 @@ const BOUNDS: &[&str] = &["min", "max", "exact"];
 pub fn check<B: Backend + Default>(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
     let mut cx = Context::new(config, set);
     cx.supersede();
+    cx.compositions();
     for index in 0..cx.requirements.len() {
         let requirement = cx.requirements[index];
         let held = cx.held.get(requirement.id) == Some(&index);
@@ -167,16 +168,6 @@ impl<'a> Context<'a> {
                         block,
                     });
                     cx.held.entry(id).or_insert(index);
-                    let parts = strings(block.field("parts"));
-                    match block.text("compose") {
-                        Some("all_of" | "any_of" | "exactly_one") => cx.parts.extend(parts),
-                        Some("unless") => {
-                            if let [exception] = parts[..] {
-                                cx.parts.insert(exception);
-                            }
-                        }
-                        _ => {}
-                    }
                 }
             }
         }
@@ -579,6 +570,26 @@ impl<'a> Context<'a> {
                 if self.held.contains_key(target) {
                     self.superseded.insert(target);
                 }
+            }
+        }
+    }
+
+    /// Finds the requirements that a composition holds as its parts, or as its exception,
+    /// after `supersede`, so a part of a retired composition holds by itself.
+    fn compositions(&mut self) {
+        for &r in &self.requirements {
+            if self.superseded.contains(r.id) {
+                continue;
+            }
+            let parts = strings(r.block.field("parts"));
+            match r.block.text("compose") {
+                Some("all_of" | "any_of" | "exactly_one") => self.parts.extend(parts),
+                Some("unless") => {
+                    if let [exception] = parts[..] {
+                        self.parts.insert(exception);
+                    }
+                }
+                _ => {}
             }
         }
     }
