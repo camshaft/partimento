@@ -12,6 +12,7 @@ use serde::Serialize;
 
 pub mod config;
 pub mod model;
+mod render;
 pub mod rules;
 pub mod solver;
 mod source;
@@ -128,8 +129,7 @@ pub struct Report {
 impl Report {
     /// Whether a finding fails the check.
     pub fn failed(&self) -> bool {
-        let failing = |finding: &Finding| finding.severity == Severity::Error;
-        self.findings.iter().any(failing)
+        fails(&self.findings)
     }
 }
 
@@ -179,9 +179,14 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     // The artifacts that a cache keeps come with the solver backends.
     let _ = cache;
     let mut findings = Vec::new();
-    if let Some(config) = config::load(tree, &mut findings) {
-        let set = model::load(tree, &config, &mut findings);
-        rules::check(&config, &set, &mut findings);
+    // A set that breaks a format rule doesn't render, so the drift of its generated files is
+    // checked only once its format rules pass.
+    if let Some((config, set)) = load(tree, &mut findings) {
+        if !fails(&findings) {
+            let paths = render::Paths::of(&config.paths);
+            let generated = render::generate(paths, &render::sections(&set));
+            findings.extend(render::drift(paths, tree, &generated));
+        }
     }
     if options.final_pass {
         for finding in &mut findings {
@@ -190,8 +195,43 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
             }
         }
     }
-    findings.sort_by(|a, b| order(a).cmp(&order(b)));
+    sort(&mut findings);
     Report { findings }
+}
+
+/// Renders the tree's generated files: the text of each section and one requirement file for each
+/// of its requirements, under the paths spec.toml sets. The tree holds the generated files alone.
+/// A set that breaks a format rule doesn't render: the error holds the findings of the format
+/// rules, in the order of a report.
+pub fn render(tree: &Tree) -> Result<Tree, Vec<Finding>> {
+    let mut findings = Vec::new();
+    match load(tree, &mut findings) {
+        Some((config, set)) if !fails(&findings) => {
+            let paths = render::Paths::of(&config.paths);
+            Ok(render::generate(paths, &render::sections(&set)).tree)
+        }
+        _ => {
+            sort(&mut findings);
+            Err(findings)
+        }
+    }
+}
+
+/// Reads the configuration and the RFCs, and checks the format rules.
+fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<(config::Config, model::Set)> {
+    let config = config::load(tree, findings)?;
+    let set = model::load(tree, &config, findings);
+    rules::check(&config, &set, findings);
+    Some((config, set))
+}
+
+/// Whether a finding fails the check.
+fn fails(findings: &[Finding]) -> bool {
+    findings.iter().any(|finding| finding.severity == Severity::Error)
+}
+
+fn sort(findings: &mut [Finding]) {
+    findings.sort_by(|a, b| order(a).cmp(&order(b)));
 }
 
 fn order(finding: &Finding) -> (&str, u32, &str, Option<&str>, &str) {
