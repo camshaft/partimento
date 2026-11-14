@@ -860,21 +860,21 @@ fn any(mut atoms: Vec<Formula>) -> Formula {
     Formula::at_least_one(atoms)
 }
 
-/// The names of the formula's atoms.
+/// The names of the formula's atoms. It keeps the parts still to read on a stack on the heap, so
+/// a formula may nest as deep as memory allows.
 fn names_of(formula: &Formula, names: &mut BTreeSet<String>) {
-    match formula {
-        Formula::Atom(name) => {
-            names.insert(name.clone());
-        }
-        Formula::Not(inner) => names_of(inner, names),
-        Formula::And(parts) | Formula::Or(parts) => {
-            for part in parts {
-                names_of(part, names);
+    let mut pending = vec![formula];
+    while let Some(formula) = pending.pop() {
+        match formula {
+            Formula::Atom(name) => {
+                names.insert(name.clone());
             }
-        }
-        Formula::Implies(a, b) | Formula::Iff(a, b) => {
-            names_of(a, names);
-            names_of(b, names);
+            Formula::Not(inner) => pending.push(inner),
+            Formula::And(parts) | Formula::Or(parts) => pending.extend(parts),
+            Formula::Implies(a, b) | Formula::Iff(a, b) => {
+                pending.push(a);
+                pending.push(b);
+            }
         }
     }
 }
@@ -989,9 +989,9 @@ fn narrow(
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    use super::{cached_consistency, consistency, Consistency};
+    use super::{cached_consistency, consistency, names_of, Consistency};
     use crate::logic::{parse, Condition, Entry, FormulaSet, Origin};
     use crate::solver::{Answer, Backend, Lit};
     use crate::{ByteVec, Cache, Key};
@@ -1077,6 +1077,20 @@ mod tests {
             consistency::<B>(&FormulaSet::default()),
             Consistency::default()
         );
+    }
+
+    /// The atoms of a formula of 100,000 nested `!`, and of one of 100,000 nested parentheses,
+    /// found without overflowing the stack.
+    #[test]
+    fn names_of_a_deep_formula() {
+        const DEPTH: usize = 100_000;
+        let negation = format!("{}a", "!".repeat(DEPTH));
+        let parentheses = format!("{}a{}", "(b & ".repeat(DEPTH), ")".repeat(DEPTH));
+        for (text, atoms) in [(negation, vec!["a"]), (parentheses, vec!["a", "b"])] {
+            let mut names = BTreeSet::new();
+            names_of(&parse(&text).unwrap(), &mut names);
+            assert_eq!(names.iter().map(String::as_str).collect::<Vec<_>>(), atoms);
+        }
     }
 
     fn consistent_set<B: Backend + Default>() {
