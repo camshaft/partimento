@@ -923,6 +923,7 @@ fn names_of(formula: &Formula, names: &mut BTreeSet<String>) {
             }
             Formula::Not(inner) => pending.push(inner),
             Formula::And(parts) | Formula::Or(parts) => pending.extend(parts),
+            Formula::ExactlyOne(parts) => pending.extend(parts),
             Formula::Implies(a, b) | Formula::Iff(a, b) => {
                 pending.push(a);
                 pending.push(b);

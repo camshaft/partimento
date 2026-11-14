@@ -519,9 +519,9 @@ fn json_origin(origin: &Origin) -> String {
     format!("{{\"requirement\":{requirement},\"file\":{file},\"line\":{line}}}")
 }
 
-/// A formula as a JSON object whose one key is its kind: `atom`, `not`, `and`, `or`, `implies`
-/// or `iff`. It walks the formula with a stack on the heap, so a deep formula doesn't grow the
-/// call stack.
+/// A formula as a JSON object whose one key is its kind: `atom`, `not`, `and`, `or`, `implies`,
+/// `iff` or `exactly_one`. It walks the formula with a stack on the heap, so a deep formula
+/// doesn't grow the call stack.
 fn json_formula(formula: &Formula) -> String {
     enum Step<'a> {
         Formula(&'a Formula),
@@ -552,6 +552,7 @@ fn json_formula(formula: &Formula) -> String {
             Formula::Or(parts) => ("or", parts.iter().collect()),
             Formula::Implies(a, b) => ("implies", vec![&**a, &**b]),
             Formula::Iff(a, b) => ("iff", vec![&**a, &**b]),
+            Formula::ExactlyOne(parts) => ("exactly_one", parts.iter().collect()),
         };
         let _ = write!(output, "{{\"{key}\":[");
         stack.push(Step::Text("]}"));
