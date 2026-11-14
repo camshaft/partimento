@@ -1,7 +1,7 @@
 //! A check with a cache returns the report of a check without one, before and after a change to
 //! one section file, and reads from the cache each section file that didn't change, the result of
-//! checks 1 and 2 where the formulas didn't change, and the generated files of each section that
-//! didn't change.
+//! checks 1 and 2 where the formulas didn't change, a conflict among them too, and the generated
+//! files of each section that didn't change.
 //!
 //! The fixture's files are embedded at compile time, so the library's tests read no file and run
 //! on wasm32 too.
@@ -9,18 +9,23 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
+use partimento::solver::{Answer, Backend as Solver, Lit};
 use partimento::{ByteVec, Cache, Finding, Key, NoCache, Options, Report, Tree};
 
 /// The backend each check of these tests checks with.
 type Backend = partimento::solver::DefaultBackend;
 
-/// One file of fixture 02-duplicate-identifier, by its path in the tree and its text.
+/// One file of a fixture, by its path in the tree and its text: of fixture 02-duplicate-identifier
+/// where the fixture isn't given.
 macro_rules! fixture_file {
-    ($path:literal) => {
+    ($fixture:literal, $path:literal) => {
         (
             $path,
-            include_str!(concat!("fixtures/02-duplicate-identifier/", $path)),
+            include_str!(concat!("fixtures/", $fixture, "/", $path)),
         )
+    };
+    ($path:literal) => {
+        fixture_file!("02-duplicate-identifier", $path)
     };
 }
 
@@ -36,6 +41,14 @@ const FILES: &[(&str, &str)] = &[
 
 /// The fixture's second section file.
 const FAREWELL: &str = "rfcs/0001-greetings/02-farewell.toml";
+
+/// The files of fixture 06-minimal-conflict, whose formulas contradict each other.
+const CONFLICTING: &[(&str, &str)] = &[
+    fixture_file!("06-minimal-conflict", "spec.toml"),
+    fixture_file!("06-minimal-conflict", "rfcs/index.toml"),
+    fixture_file!("06-minimal-conflict", "rfcs/0001-greetings/rfc.toml"),
+    fixture_file!("06-minimal-conflict", "rfcs/0001-greetings/01-greeting.toml"),
+];
 
 /// A cache that keeps each artifact in memory, and counts the artifacts it returns.
 #[derive(Default)]
@@ -137,6 +150,50 @@ fn uncached(tree: &Tree) -> Report {
 
 fn cached(tree: &Tree, cache: &impl Cache) -> Report {
     partimento::check_cached::<Backend, _>(tree, &Options::default(), cache)
+}
+
+thread_local! {
+    static SOLVES: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The backend of a check that counts its solves on the thread that runs it.
+#[derive(Default)]
+struct Counted(Backend);
+
+impl Solver for Counted {
+    fn new_var(&mut self) -> Lit {
+        self.0.new_var()
+    }
+
+    fn add_clause(&mut self, clause: &[Lit]) {
+        self.0.add_clause(clause);
+    }
+
+    fn solve(&mut self, assumptions: &[Lit]) -> Answer {
+        SOLVES.with(|count| count.set(count.get() + 1));
+        self.0.solve(assumptions)
+    }
+}
+
+#[test]
+fn a_second_check_of_a_conflicting_set_reads_its_result_from_the_cache() {
+    let mut tree = Tree::default();
+    for (path, text) in CONFLICTING {
+        tree.files.insert(path.to_string(), ByteVec::from(*text));
+    }
+    let options = Options::default();
+    let expected = partimento::check::<Counted>(&tree, &options);
+    let unsatisfiable = |finding: &Finding| finding.rule == "unsatisfiable";
+    assert!(expected.findings.iter().any(unsatisfiable));
+    let cache = Memory::default();
+    let check = || partimento::check_cached::<Counted, _>(&tree, &options, &cache);
+    assert_eq!(check(), expected);
+    SOLVES.with(|count| count.set(0));
+    assert_eq!(check(), expected);
+    // Each artifact the first check kept, the result of checks 1 and 2 among them, is read from
+    // the cache, and the second check doesn't solve.
+    assert_eq!(cache.returned.get(), cache.kept.borrow().len());
+    assert_eq!(SOLVES.with(Cell::get), 0);
 }
 
 #[test]
