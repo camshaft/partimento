@@ -291,7 +291,8 @@ fn load_meta(
 ) -> Option<Meta> {
     let text = source::text(file, bytes, findings)?;
     let raw: RawMeta = source::parse(file, &text, findings)?;
-    let line = |span: Range<usize>| source::line_of(text.as_bytes(), span.start);
+    let lines = source::Lines::new(text.as_bytes());
+    let line = |span: Range<usize>| lines.line(span.start);
     let held = *raw.number.get_ref();
     if held != number {
         let at = line(raw.number.span());
@@ -319,9 +320,10 @@ fn load_meta(
 fn load_section(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Option<Section> {
     let text = source::text(file, bytes, findings)?;
     let raw: RawSection = source::parse(file, &text, findings)?;
-    let line = |span: Range<usize>| source::line_of(text.as_bytes(), span.start);
+    let lines = source::Lines::new(text.as_bytes());
+    let line = |span: Range<usize>| lines.line(span.start);
     let (header, fields) = match raw.section {
-        Some(table) => (line(table.span()), read_fields(table.into_inner(), &text)),
+        Some(table) => (line(table.span()), read_fields(table.into_inner(), &lines)),
         None => (1, Vec::new()),
     };
     let requirements = raw
@@ -329,7 +331,7 @@ fn load_section(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Opt
         .into_iter()
         .map(|block| Block {
             line: line(block.span()),
-            fields: read_fields(block.into_inner(), &text),
+            fields: read_fields(block.into_inner(), &lines),
         })
         .collect();
     Some(Section {
@@ -340,15 +342,110 @@ fn load_section(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Opt
     })
 }
 
-fn read_fields(table: RawTable, text: &str) -> Vec<Field> {
+fn read_fields(table: RawTable, lines: &source::Lines) -> Vec<Field> {
     let mut fields: Vec<Field> = table
         .into_iter()
         .map(|(key, value)| Field {
-            line: source::line_of(text.as_bytes(), key.span().start),
+            line: lines.line(key.span().start),
             key: key.into_inner(),
             value: value.into_inner(),
         })
         .collect();
     fields.sort_by(|a, b| (a.line, &a.key).cmp(&(b.line, &b.key)));
     fields
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{load, Field, Set, LAYOUT};
+    use crate::{config, ByteVec, Finding, Tree};
+
+    /// The configuration of the tests' set.
+    const SPEC: &str = r#"prefix = "EX"
+levels = ["MUST"]
+
+[paths]
+rfcs = "rfcs"
+rendered = "rendered"
+requirements = "requirements"
+"#;
+
+    /// An rfc.toml whose number, on line 3, isn't its directory's, and whose retired identifiers
+    /// are on lines 6 and 7.
+    const META: &str = r#"title = "Greetings"
+area = "core"
+number = 2
+abstract = "How to greet."
+retired = [
+    "EX-0001-003",
+    "EX-0001-004",
+]
+"#;
+
+    /// A section file whose `[section]` header is on line 1 and whose `[[requirement]]` headers
+    /// are on lines 5 and 9, with each key on a line of its own.
+    const SECTION: &str = r#"[section]
+anchor = "greeting"
+title = "Greeting"
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+
+[[requirement]]
+statement = "The greeter MUST greet."
+id = "EX-0001-002"
+"#;
+
+    /// The set that the tests' files hold, with the findings of their reads.
+    fn load_set(findings: &mut Vec<Finding>) -> Set {
+        let files = [
+            ("spec.toml", SPEC),
+            ("rfcs/index.toml", ""),
+            ("rfcs/0001-greetings/rfc.toml", META),
+            ("rfcs/0001-greetings/01-greeting.toml", SECTION),
+        ];
+        let mut tree = Tree::default();
+        for (path, text) in files {
+            let bytes = ByteVec::from(text.to_string());
+            tree.files.insert(path.to_string(), bytes);
+        }
+        let loaded = config::load(&tree, findings);
+        let config = loaded.expect("spec.toml holds a valid configuration");
+        load(&tree, &config, findings)
+    }
+
+    /// The key and the line of each field.
+    fn keys(fields: &[Field]) -> Vec<(&str, u32)> {
+        fields
+            .iter()
+            .map(|field| (field.key.as_str(), field.line))
+            .collect()
+    }
+
+    #[test]
+    fn a_section_holds_the_line_of_each_header_and_key() {
+        let set = load_set(&mut Vec::new());
+        let section = &set.rfcs[0].sections[0];
+        assert_eq!(section.line, 1);
+        assert_eq!(keys(&section.fields), [("anchor", 2), ("title", 3)]);
+        let blocks = &section.requirements;
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].line, 5);
+        assert_eq!(keys(&blocks[0].fields), [("id", 6), ("level", 7)]);
+        assert_eq!(blocks[1].line, 9);
+        assert_eq!(keys(&blocks[1].fields), [("statement", 10), ("id", 11)]);
+    }
+
+    #[test]
+    fn an_rfc_toml_holds_the_line_of_its_number_and_each_retired_identifier() {
+        let mut findings = Vec::new();
+        let set = load_set(&mut findings);
+        let file = "rfcs/0001-greetings/rfc.toml";
+        let message = "rfc.toml holds number 2, and its directory is RFC 1";
+        assert_eq!(findings, [Finding::error(LAYOUT, file, 3, None, message)]);
+        let meta = set.rfcs[0].meta.as_ref().expect("rfc.toml parses");
+        let lines: Vec<u32> = meta.retired.iter().map(|id| id.line).collect();
+        assert_eq!(lines, [6, 7]);
+    }
 }
