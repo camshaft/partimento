@@ -206,64 +206,6 @@ fn a_tree_without_spec_toml_fails_at_spec_toml() {
     assert_eq!(finding.file, "spec.toml");
 }
 
-/// Fixture 05-key-word's tree with `paths.rfcs`, at line 6 of its spec.toml, set to `value`.
-fn with_rfcs(value: &str) -> Tree {
-    let mut tree = tree(&FIXTURES[1]);
-    let spec = include_str!("fixtures/05-key-word/spec.toml");
-    let spec = spec.replace("rfcs = \"rfcs\"", &format!("rfcs = {value:?}"));
-    tree.files
-        .insert("spec.toml".to_string(), ByteVec::from(spec));
-    tree
-}
-
-#[test]
-fn a_path_that_leaves_the_tree_fails_at_spec_toml() {
-    let outside = [
-        "", "/", "/home", "..", "../..", "rfcs/..", "./rfcs", "rfcs/", "rfcs//x",
-    ];
-    let other_forms = ["rfcs\\x", "c:rfcs"];
-    for value in outside.iter().chain(other_forms.iter()) {
-        let report = partimento::check_default(&with_rfcs(value), &Options::default());
-        assert_eq!(report.findings.len(), 1, "{value:?}: {}", lines(&report));
-        let finding = &report.findings[0];
-        assert_eq!(finding.rule, "config", "{value:?}");
-        assert_eq!(finding.file, "spec.toml", "{value:?}");
-        assert_eq!(finding.line, 6, "{value:?}");
-        assert!(report.failed(), "{value:?}");
-    }
-    let report = partimento::check_default(&with_rfcs("rfcs"), &Options::default());
-    assert_eq!(lines(&report), FIXTURES[1].expected);
-}
-
-/// Fixture 05-key-word's tree with the `[paths]` key `key` of its spec.toml set to `value`.
-fn with_path(key: &str, value: &str) -> Tree {
-    let mut tree = tree(&FIXTURES[1]);
-    let spec = include_str!("fixtures/05-key-word/spec.toml");
-    let prefix = format!("{key} = ");
-    let line = spec.lines().find(|text| text.starts_with(&prefix));
-    let line = line.expect("spec.toml sets the key");
-    let spec = spec.replace(line, &format!("{key} = {value:?}"));
-    tree.files
-        .insert("spec.toml".to_string(), ByteVec::from(spec));
-    tree
-}
-
-#[test]
-fn each_path_that_leaves_the_tree_fails_at_its_key() {
-    // The lines of fixture 05-key-word's spec.toml that set the three keys.
-    for (key, line) in [("rfcs", 6), ("rendered", 7), ("requirements", 8)] {
-        let report = partimento::check_default(&with_path(key, "../.."), &Options::default());
-        assert_eq!(report.findings.len(), 1, "{key}: {}", lines(&report));
-        let finding = &report.findings[0];
-        assert_eq!(finding.rule, "config", "{key}");
-        assert_eq!(finding.file, "spec.toml", "{key}");
-        assert_eq!(finding.line, line, "{key}");
-        let message = format!("`paths.{key}` is `../..`");
-        assert!(finding.to_string().contains(&message), "{key}: {finding}");
-        assert!(report.failed(), "{key}");
-    }
-}
-
 /// The path of RFC 0001's first section file.
 const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
 
@@ -330,6 +272,64 @@ fn an_unless_forces_its_requirement_only_where_its_exception_is_false() {
     for (backend, check) in backends() {
         let report = check(&tree, &Options::default());
         assert_eq!(lines(&report), "", "{backend}");
+    }
+}
+
+/// Fixture 05-key-word's tree with `paths.rfcs`, at line 6 of its spec.toml, set to `value`.
+fn with_rfcs(value: &str) -> Tree {
+    let mut tree = tree(&FIXTURES[1]);
+    let spec = include_str!("fixtures/05-key-word/spec.toml");
+    let spec = spec.replace("rfcs = \"rfcs\"", &format!("rfcs = {value:?}"));
+    tree.files
+        .insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree
+}
+
+#[test]
+fn a_path_that_leaves_the_tree_fails_at_spec_toml() {
+    let outside = [
+        "", "/", "/home", "..", "../..", "rfcs/..", "./rfcs", "rfcs/", "rfcs//x",
+    ];
+    let other_forms = ["rfcs\\x", "c:rfcs"];
+    for value in outside.iter().chain(other_forms.iter()) {
+        let report = partimento::check_default(&with_rfcs(value), &Options::default());
+        assert_eq!(report.findings.len(), 1, "{value:?}: {}", lines(&report));
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule, "config", "{value:?}");
+        assert_eq!(finding.file, "spec.toml", "{value:?}");
+        assert_eq!(finding.line, 6, "{value:?}");
+        assert!(report.failed(), "{value:?}");
+    }
+    let report = partimento::check_default(&with_rfcs("rfcs"), &Options::default());
+    assert_eq!(lines(&report), FIXTURES[1].expected);
+}
+
+/// Fixture 05-key-word's tree with the `[paths]` key `key` of its spec.toml set to `value`.
+fn with_path(key: &str, value: &str) -> Tree {
+    let mut tree = tree(&FIXTURES[1]);
+    let spec = include_str!("fixtures/05-key-word/spec.toml");
+    let prefix = format!("{key} = ");
+    let line = spec.lines().find(|text| text.starts_with(&prefix));
+    let line = line.expect("spec.toml sets the key");
+    let spec = spec.replace(line, &format!("{key} = {value:?}"));
+    tree.files
+        .insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree
+}
+
+#[test]
+fn each_path_that_leaves_the_tree_fails_at_its_key() {
+    // The lines of fixture 05-key-word's spec.toml that set the three keys.
+    for (key, line) in [("rfcs", 6), ("rendered", 7), ("requirements", 8)] {
+        let report = partimento::check_default(&with_path(key, "../.."), &Options::default());
+        assert_eq!(report.findings.len(), 1, "{key}: {}", lines(&report));
+        let finding = &report.findings[0];
+        assert_eq!(finding.rule, "config", "{key}");
+        assert_eq!(finding.file, "spec.toml", "{key}");
+        assert_eq!(finding.line, line, "{key}");
+        let message = format!("`paths.{key}` is `../..`");
+        assert!(finding.to_string().contains(&message), "{key}: {finding}");
+        assert!(report.failed(), "{key}");
     }
 }
 
