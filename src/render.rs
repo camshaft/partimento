@@ -141,9 +141,6 @@ pub fn generate_cached<C: Cache>(
     sections: &[Section<'_>],
     cache: &C,
 ) -> Generated {
-    if !cache.keeps() {
-        return generate(paths, sections);
-    }
     let mut generated = Generated::default();
     for section in sections {
         let key = artifact::render_key(paths, section);
