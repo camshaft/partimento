@@ -302,7 +302,13 @@ fn load_index(file: &str, text: &str, findings: &mut Vec<Finding>) -> Option<Ind
             let message = format!(
                 "RFC {number}'s state follows from its directory, so the row can leave out `state`"
             );
-            findings.push(Finding::warning(INDEX_STATE, file, state.line, None, message));
+            findings.push(Finding::warning(
+                INDEX_STATE,
+                file,
+                state.line,
+                None,
+                message,
+            ));
         }
         index.rfc.push(IndexEntry {
             number: entry.number,
