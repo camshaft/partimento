@@ -1125,10 +1125,14 @@ mod tests {
         assert_eq!(encoding.solve(&selectors[1..]), Answer::Sat);
     }
 
-    /// An empty conjunction is true and an empty disjunction false.
+    /// An empty conjunction is true; an empty disjunction and an empty `ExactlyOne` are false.
     fn empty_compositions<B: Backend + Default>() {
         let mut empty = FormulaSet::default();
-        for formula in [Formula::And(Vec::new()), Formula::Or(Vec::new())] {
+        for formula in [
+            Formula::And(Vec::new()),
+            Formula::Or(Vec::new()),
+            Formula::ExactlyOne(Vec::new()),
+        ] {
             empty.formulas.push(Entry {
                 formula,
                 origin: Origin {
@@ -1141,9 +1145,12 @@ mod tests {
         }
         let mut encoding = Encoding::new(B::default(), &empty);
         let selectors = encoding.selectors().to_vec();
+        assert_eq!(selectors.len(), 3);
         assert_eq!(encoding.solve(&selectors[..1]), Answer::Sat);
-        let or = encoding.solve(&selectors[1..]);
+        let or = encoding.solve(&selectors[1..2]);
         assert!(matches!(or, Answer::Unsat { .. }));
+        let exactly_one = encoding.solve(&selectors[2..]);
+        assert!(matches!(exactly_one, Answer::Unsat { .. }));
     }
 
     /// The nesting of the deep formulas' tests.
