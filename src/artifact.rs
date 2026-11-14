@@ -3,10 +3,10 @@
 //!
 //! The artifact of a section file is its load: its section, where the file parses, and the
 //! findings its read reports. Its key is the SHA-256 of the crate's version, the identity of the
-//! build's code, the encoding's version, the file's path and its bytes, each after its length, so
-//! that a change to any of them makes another key. Its encoding ends with the SHA-256 of the bytes
-//! before it, and the check reads the file again where a cache returns bytes that don't decode to
-//! a whole load, so a damaged entry doesn't change a report.
+//! build's code, the digest of the probes' loads, the encoding's version, the file's path and its
+//! bytes, each after its length, so that a change to any of them makes another key. Its encoding
+//! ends with the SHA-256 of the bytes before it, and the check reads the file again where a cache
+//! returns bytes that don't decode to a whole load, so a damaged entry doesn't change a report.
 //!
 //! Two artifacts follow from the set's loads. The result of checks 1 and 2 for the set's formulas
 //! is kept under a key of the formulas and of the conditions' atoms, and only where the formulas
@@ -20,10 +20,12 @@
 mod build_identity;
 mod sha256;
 
+use std::sync::OnceLock;
+
 use toml::Value;
 
 use crate::logic::{Formula, FormulaSet};
-use crate::model::{Block, Field, Section};
+use crate::model::{load_section, Block, Field, Section};
 use crate::render::{Generated, Paths, Section as Rendered};
 use crate::{ByteVec, Finding, Key, Severity};
 
@@ -37,12 +39,19 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// version in that lock, makes another identity, so a build with such a change doesn't read an
 /// earlier build's entries from a cache. A build of this crate as a dependency of another
 /// workspace resolves its dependencies with that workspace's lock, and turns on each feature of
-/// `toml` that the workspace's other packages ask for, which build.rs doesn't read.
+/// `toml` that the workspace's other packages ask for, and a `cargo install` without `--locked`
+/// resolves its dependencies again; build.rs doesn't read the lock or the features either build
+/// compiles `toml` with. Where such a build compiles another `toml` version or feature, each key
+/// still changes where that version or feature changes the load of one of the `PROBES`, since
+/// each key holds the digest of their loads. A `toml` version or feature that changes the load
+/// of another file and doesn't change the load of a probe keeps each key, so a build with it can
+/// read the entries of a build without it from the same cache.
 const BUILD: &str = env!("PARTIMENTO_BUILD");
 
-/// The version of the encoding, which each key holds. A change to this encoding, or to what a
-/// section's load holds, makes another `BUILD` and so another key, and leaves this version as it
-/// is.
+/// The version of the encoding, which each key holds. A change to this encoding, or to the code
+/// that loads a section file, makes another `BUILD` and so another key, and leaves this version as
+/// it is. `BUILD` states where a change to `toml` doesn't make another `BUILD`, and how each key
+/// holds that change.
 const ENCODING: u32 = 1;
 
 /// The first part of a section file's key, which no other kind of artifact's key starts with.
@@ -67,23 +76,99 @@ const RENDER: &[u8] = b"partimento section render";
 /// key, and leaves this version as it is.
 const RENDER_ENCODING: u32 = 1;
 
+/// The section files whose loads each key holds, by the digest of their loads, so that a `toml`
+/// version or feature whose parse changes one of these loads makes another key: a section file
+/// that holds a value of each kind TOML has, and files that don't parse, whose findings hold the
+/// parser's messages and the lines of its errors.
+const PROBES: [(&str, &str); 5] = [
+    ("probes/values.toml", PROBE_VALUES),
+    ("probes/missing-value.toml", "[section]\nvalue =\n"),
+    ("probes/duplicate-key.toml", "[section]\nkey = 1\nkey = 2\n"),
+    ("probes/wrong-type.toml", "section = 1\n"),
+    ("probes/unknown-key.toml", "other = 1\n"),
+];
+
+/// The probe that parses: a `[section]` table that holds a value of each kind TOML has, each at a
+/// line of its own, and two blocks, the second without a field. The keys of its inline table
+/// aren't in sorted order, so a build of `toml` that keeps a table's keys in the order of the
+/// file, as its `preserve_order` feature does, loads it another way.
+const PROBE_VALUES: &str = r#"[section]
+string = "caf\u00e9 \"quoted\""
+literal = 'C:\path'
+multiline = """
+first
+second"""
+integer = -42
+hex = 0xff
+float = 2.5
+exponent = 6.02e23
+infinity = -inf
+nan = nan
+negative_zero = -0.0
+boolean = true
+offset_datetime = 1979-05-27T07:32:00.999999-07:00
+local_datetime = 1979-05-27T07:32:00
+local_date = 1979-05-27
+local_time = 00:32:00.5
+array = [1, "two", [3.0, false]]
+table = { nested = { list = [] }, key = "value" }
+
+[[requirement]]
+id = "EX-0001-001"
+
+[[requirement]]
+"#;
+
 /// The key of a section file's load.
 pub(crate) fn section_key(file: &str, bytes: &ByteVec) -> Key {
     let bytes = bytes.copy_to_bytes();
-    load_key(VERSION, BUILD, ENCODING, file, &bytes)
+    load_key(VERSION, BUILD, &probes(), ENCODING, file, &bytes)
 }
 
-fn load_key(version: &str, build: &str, encoding: u32, file: &str, bytes: &[u8]) -> Key {
+fn load_key(
+    version: &str,
+    build: &str,
+    probes: &[u8],
+    encoding: u32,
+    file: &str,
+    bytes: &[u8],
+) -> Key {
     let encoding = encoding.to_le_bytes();
-    let parts: [&[u8]; 6] = [
+    let parts: [&[u8]; 7] = [
         SECTION,
         version.as_bytes(),
         build.as_bytes(),
+        probes,
         &encoding,
         file.as_bytes(),
         bytes,
     ];
     key(&parts)
+}
+
+/// The digest of the loads of the `PROBES` that this build's code reads, which each key holds:
+/// computed for the first key of a run, and kept for the rest of the run.
+fn probes() -> [u8; DIGEST] {
+    static PROBES_DIGEST: OnceLock<[u8; DIGEST]> = OnceLock::new();
+    *PROBES_DIGEST.get_or_init(|| probes_digest(&probe_loads()))
+}
+
+/// The load of each of the `PROBES`, in their order, as `encode_section` encodes it.
+fn probe_loads() -> Vec<ByteVec> {
+    let load = |&(file, text): &(&str, &str)| {
+        let bytes = ByteVec::from(text.as_bytes().to_vec());
+        let mut findings = Vec::new();
+        let section = load_section(file, &bytes, &mut findings);
+        encode_section(&findings, section.as_ref())
+    };
+    PROBES.iter().map(load).collect()
+}
+
+/// The SHA-256 of `loads`, each after its length in 8 bytes, as `key` hashes its parts.
+fn probes_digest(loads: &[ByteVec]) -> [u8; DIGEST] {
+    let loads: Vec<_> = loads.iter().map(|load| load.copy_to_bytes()).collect();
+    let parts: Vec<&[u8]> = loads.iter().map(|load| &load[..]).collect();
+    key(&parts).0
 }
 
 /// The SHA-256 of the parts, each after its length in 8 bytes, so that bytes moved from one part
@@ -698,17 +783,93 @@ table = { key = "value", nested = { list = [] } }
     #[test]
     fn each_input_of_a_key_changes_it() {
         let (file, bytes) = ("rfcs/a.toml", b"id = 1\n".as_slice());
-        let key = load_key(VERSION, BUILD, ENCODING, file, bytes);
-        assert_ne!(load_key("0.0.0-other", BUILD, ENCODING, file, bytes), key);
-        assert_ne!(load_key(VERSION, "other build", ENCODING, file, bytes), key);
-        assert_ne!(load_key(VERSION, BUILD, ENCODING + 1, file, bytes), key);
+        let digest = probes();
+        let key = load_key(VERSION, BUILD, &digest, ENCODING, file, bytes);
         assert_ne!(
-            load_key(VERSION, BUILD, ENCODING, "rfcs/b.toml", bytes),
+            load_key("0.0.0-other", BUILD, &digest, ENCODING, file, bytes),
             key
         );
-        assert_ne!(load_key(VERSION, BUILD, ENCODING, file, b"id = 2\n"), key);
+        assert_ne!(
+            load_key(VERSION, "other build", &digest, ENCODING, file, bytes),
+            key
+        );
+        assert_ne!(
+            load_key(VERSION, BUILD, &[0; DIGEST], ENCODING, file, bytes),
+            key
+        );
+        assert_ne!(
+            load_key(VERSION, BUILD, &digest, ENCODING + 1, file, bytes),
+            key
+        );
+        assert_ne!(
+            load_key(VERSION, BUILD, &digest, ENCODING, "rfcs/b.toml", bytes),
+            key
+        );
+        assert_ne!(
+            load_key(VERSION, BUILD, &digest, ENCODING, file, b"id = 2\n"),
+            key
+        );
         let text = ByteVec::from(bytes.to_vec());
         assert_eq!(section_key(file, &text), key);
+    }
+
+    #[test]
+    fn the_probes_hold_a_value_of_each_kind_and_files_that_dont_parse() {
+        let loads = probe_loads();
+        let (findings, section) = decode_section(&loads[0]).expect("the load decodes");
+        assert!(findings.is_empty(), "{findings:?}");
+        let section = section.expect("the first probe parses");
+        assert_eq!(section.requirements.len(), 2);
+        let values = section.fields.iter().map(|field| &field.value);
+        let kinds: BTreeSet<&str> = values.map(Value::type_str).collect();
+        let kinds: Vec<&str> = kinds.into_iter().collect();
+        assert_eq!(
+            kinds.join(" "),
+            "array boolean datetime float integer string table"
+        );
+        // Each other probe's line and a word of its message.
+        let expected: [(u32, &str); 4] = [
+            (2, "value"),
+            (3, "duplicate"),
+            (1, "invalid type"),
+            (1, "unknown field"),
+        ];
+        assert_eq!(loads.len(), expected.len() + 1);
+        for (load, (line, word)) in loads[1..].iter().zip(expected) {
+            let (findings, section) = decode_section(load).expect("the load decodes");
+            assert_eq!(section, None);
+            assert_eq!(findings.len(), 1, "{findings:?}");
+            assert_eq!(findings[0].rule, crate::source::RULE);
+            assert_eq!(findings[0].line, line, "{findings:?}");
+            assert!(findings[0].message.contains(word), "{findings:?}");
+        }
+    }
+
+    #[test]
+    fn a_change_to_a_probes_load_changes_the_key() {
+        let loads = probe_loads();
+        assert_eq!(probes_digest(&loads), probes());
+        let (file, bytes) = ("rfcs/a.toml", b"id = 1\n".as_slice());
+        let key_of = |loads: &[ByteVec]| {
+            let digest = probes_digest(loads);
+            load_key(VERSION, BUILD, &digest, ENCODING, file, bytes)
+        };
+        let key = key_of(&loads);
+        // A `toml` version that reads the first probe's float as another value.
+        let (findings, section) = decode_section(&loads[0]).expect("the load decodes");
+        let mut section = section.expect("the first probe parses");
+        let fields = &mut section.fields;
+        let float = fields.iter_mut().find(|field| field.key == "float");
+        float.expect("the first probe holds a float").value = Value::Float(2.25);
+        let mut changed = loads.clone();
+        changed[0] = encode_section(&findings, Some(&section));
+        assert_ne!(key_of(&changed), key);
+        // A `toml` version that words the second probe's error another way.
+        let (mut findings, section) = decode_section(&loads[1]).expect("the load decodes");
+        findings[0].message.push_str(", and more");
+        let mut changed = loads.clone();
+        changed[1] = encode_section(&findings, section.as_ref());
+        assert_ne!(key_of(&changed), key);
     }
 
     #[test]
