@@ -189,9 +189,10 @@ pub fn stale<'t>(paths: Paths<'_>, tree: &'t Tree, generated: &Tree) -> Vec<&'t 
         .collect()
 }
 
-/// Whether a path is under one of the generated paths.
+/// Whether a path is under one of the generated paths, by [`config::is_generated`], which the
+/// `render` command calls too.
 pub fn is_generated(paths: Paths<'_>, path: &str) -> bool {
-    under(paths.rendered, path) || under(paths.requirements, path)
+    config::is_generated(paths.rendered, paths.requirements, path)
 }
 
 /// Joins a configured path and the parts under it with `/`.
@@ -204,13 +205,6 @@ fn join(base: &str, parts: &[&str]) -> String {
         path.push_str(part);
     }
     path
-}
-
-/// Whether a path is under a configured path.
-fn under(base: &str, path: &str) -> bool {
-    let base = base.trim_end_matches('/');
-    let rest = path.strip_prefix(base);
-    base.is_empty() || rest.is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Adds a heading with an explicit anchor, after a blank line where text comes before it.

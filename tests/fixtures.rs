@@ -457,7 +457,7 @@ mod binary {
 
     use partimento::{ByteVec, Tree};
 
-    use super::{fails, named, split, tree, with_side, DIFF_EXPECTED, FIXTURES};
+    use super::{fails, named, split, stale, tree, with_side, DIFF_EXPECTED, FIXTURES};
 
     fn root(name: &str) -> PathBuf {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -716,6 +716,43 @@ mod binary {
         set_mode(parent, 0o755);
         refused(&output);
         assert!(!file.exists());
+    }
+
+    #[test]
+    fn render_removes_exactly_the_files_the_check_reports_as_stale() {
+        let mut written = tree(named("01-valid-set"));
+        written.files.remove("rfcs/0001-greetings/02-reply.toml");
+        // A file under `.duvet` that isn't under the generated directories isn't stale.
+        let config = ByteVec::from("[report]\n".to_string());
+        let kept = ".duvet/config.toml".to_string();
+        written.files.insert(kept, config);
+        let dir = scratch("render-removes-the-stale-files");
+        write_tree(&dir, &written);
+        let root = dir.to_str().expect("the path is UTF-8");
+        let check = run(&["check", "--root", root]);
+        assert_eq!(check.status.code(), Some(1));
+        let output = run(&["render", "--root", root]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(0), "{stderr}");
+        // The check reports as stale each file the render removes, and no other file.
+        let found = files_under(&dir);
+        let mut removed = Vec::new();
+        let mut reported = String::new();
+        for path in written.files.keys() {
+            if !found.files.contains_key(path) {
+                removed.push(path.as_str());
+                reported.push_str(&stale(path));
+            }
+        }
+        assert_eq!(String::from_utf8_lossy(&check.stdout), reported);
+        let expected = [
+            ".duvet/requirements/0001-greetings/02-reply/EX-0001-003.toml",
+            "rendered/0001-greetings/02-reply.md",
+        ];
+        assert_eq!(removed, expected);
+        let output = run(&["check", "--root", root]);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+        assert_eq!(output.status.code(), Some(0));
     }
 
     /// Runs `check` on `dir`, and asserts that it exits with 2, prints nothing on stdout, and

@@ -131,10 +131,20 @@ fn nested(a: &str, b: &str) -> bool {
     a == b || under(a, b) || under(b, a)
 }
 
-/// Whether the directory `inner` is under the directory `outer`.
+/// Whether `inner`, a file or a directory of the tree, is under the directory `outer`, which may
+/// end in `/`. Every path is under the empty directory, the root of the tree.
 fn under(inner: &str, outer: &str) -> bool {
+    let outer = outer.trim_end_matches('/');
     let rest = inner.strip_prefix(outer);
-    rest.is_some_and(|rest| rest.starts_with('/'))
+    outer.is_empty() || rest.is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Whether `path`, a file or a directory of the tree, is under the generated directory
+/// `rendered` or `requirements`, each of which may end in `/`. The drift rule reports each file
+/// under them that the render doesn't generate as stale, and the `render` command removes those
+/// same files; both call this, so they can't disagree on which files are generated.
+pub fn is_generated(rendered: &str, requirements: &str, path: &str) -> bool {
+    under(path, rendered) || under(path, requirements)
 }
 
 /// Reads the configuration from the tree, or adds the findings that say why it can't.
@@ -243,7 +253,7 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, FILE};
+    use super::{is_generated, load, FILE};
     use crate::{ByteVec, Tree};
 
     /// A configuration whose levels, on line 1, hold a lowercase word, whose prefix, on line 3,
@@ -280,5 +290,21 @@ last = 1
             (12, "the RFC numbers of system `core` run from 9 down to 1"),
         ];
         assert_eq!(found, expected);
+    }
+
+    #[test]
+    fn a_generated_file_is_one_under_the_rendered_or_the_requirements_directory() {
+        let generated = |path: &str| is_generated("rendered", ".duvet/requirements", path);
+        assert!(generated("rendered/0001-greeting/01-hello.md"));
+        assert!(generated(
+            ".duvet/requirements/0001-greeting/01-hello/EX-0001-001.toml"
+        ));
+        assert!(!generated("rendered"));
+        assert!(!generated("rendered.md"));
+        assert!(!generated(".duvet/config.toml"));
+        assert!(!generated("rfcs/0001-greeting/01-hello.toml"));
+        assert!(is_generated("rendered/", "requirements/", "rendered/a.md"));
+        assert!(!is_generated("rendered/", "requirements/", "rendered.md"));
+        assert!(is_generated("", "requirements", "rfcs/index.toml"));
     }
 }

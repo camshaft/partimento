@@ -178,26 +178,26 @@ fn render(root: &Path, tree: &Tree, format: Format) -> Result<ExitCode, String> 
         }
     };
     // A tree that renders holds a configuration that loads.
-    let dirs = match config::load(tree, &mut Vec::new()) {
-        Some(config) => vec![config.paths.rendered, config.paths.requirements],
-        None => Vec::new(),
-    };
-    write(root, tree, &generated, &dirs)?;
+    if let Some(config) = config::load(tree, &mut Vec::new()) {
+        write(root, tree, &generated, &config.paths)?;
+    }
     Ok(ExitCode::SUCCESS)
 }
 
-/// Removes each file of the tree under the generated directories `dirs` that the render doesn't
-/// generate, with each directory above it that the removal leaves empty, and writes each generated
-/// file that the tree doesn't hold byte for byte.
-fn write(root: &Path, tree: &Tree, generated: &Tree, dirs: &[String]) -> Result<(), String> {
+/// Removes each file of the tree under the generated directories of `paths` that the render
+/// doesn't generate, the files the drift rule reports as stale, with each directory above it that
+/// the removal leaves empty, and writes each generated file that the tree doesn't hold byte for
+/// byte.
+fn write(root: &Path, tree: &Tree, generated: &Tree, paths: &config::Paths) -> Result<(), String> {
     for path in tree.files.keys() {
-        let under = |dir: &String| path.starts_with(&format!("{dir}/"));
-        if !dirs.iter().any(under) || generated.files.contains_key(path) {
+        let stale = config::is_generated(&paths.rendered, &paths.requirements, path)
+            && !generated.files.contains_key(path);
+        if !stale {
             continue;
         }
         let file = root.join(path);
         fs::remove_file(&file).map_err(|error| io_error(&file, &error))?;
-        remove_empty(root, path, dirs)?;
+        remove_empty(root, path, paths)?;
     }
     for (path, bytes) in &generated.files {
         if tree.files.get(path) == Some(bytes) {
@@ -214,11 +214,12 @@ fn write(root: &Path, tree: &Tree, generated: &Tree, dirs: &[String]) -> Result<
 }
 
 /// Removes each directory above `path` that is empty, from the nearest, up to the generated
-/// directory that holds it, which stays.
-fn remove_empty(root: &Path, path: &str, dirs: &[String]) -> Result<(), String> {
+/// directory of `paths` that holds it, which stays: that directory isn't under a generated
+/// directory itself.
+fn remove_empty(root: &Path, path: &str, paths: &config::Paths) -> Result<(), String> {
     let mut rest = path;
     while let Some((parent, _)) = rest.rsplit_once('/') {
-        if dirs.iter().any(|dir| dir == parent) {
+        if !config::is_generated(&paths.rendered, &paths.requirements, parent) {
             break;
         }
         let dir = root.join(parent);
