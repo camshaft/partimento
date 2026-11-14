@@ -2,10 +2,8 @@
 number = 1
 title = "Greetings"
 area = "core"
-state = "written"
 
 [[rfc]]
 number = 2
 title = "Farewells"
 area = "core"
-state = "written"

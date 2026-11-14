@@ -2,10 +2,8 @@
 number = 204
 title = "Greetings"
 area = "front"
-state = "written"
 
 [[rfc]]
 number = 301
 title = "Storage"
 area = "back"
-state = "planned"
