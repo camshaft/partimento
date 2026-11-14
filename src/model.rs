@@ -330,14 +330,19 @@ fn load_meta(
 }
 
 /// A section file's load: its section where the file parses, and the findings its read reports,
-/// which it adds to `findings`. It reads the load from `cache` where the cache keeps one for the
-/// file's path and bytes, and otherwise reads the file and keeps its load in `cache`.
+/// which it adds to `findings`. Where `cache` keeps artifacts, it reads the load from `cache`
+/// where the cache holds one for the file's path and bytes, and otherwise reads the file and
+/// keeps its load in `cache`. Where `cache` doesn't keep artifacts, such as `NoCache`, it reads
+/// the file without building a key or an artifact.
 fn cached_section<C: Cache>(
     file: &str,
     bytes: &ByteVec,
     cache: &C,
     findings: &mut Vec<Finding>,
 ) -> Option<Section> {
+    if !cache.keeps() {
+        return load_section(file, bytes, findings);
+    }
     let key = artifact::section_key(file, bytes);
     let kept = cache.get(&key);
     if let Some((found, section)) = kept.as_ref().and_then(artifact::decode_section) {
