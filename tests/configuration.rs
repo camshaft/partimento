@@ -11,7 +11,10 @@ use partimento::{model, rules, ByteVec, Options, Report, Tree};
 /// One file of the fixture, by its path in the fixture's tree and its text.
 macro_rules! embed {
     ($path:literal) => {
-        ($path, include_str!(concat!("fixtures/configuration/", $path)))
+        (
+            $path,
+            include_str!(concat!("fixtures/configuration/", $path)),
+        )
     };
 }
 
