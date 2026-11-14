@@ -14,6 +14,8 @@ use partimento::{Options, Report, Tree};
 
 const RELATION: Fixture = fixture!("03-unresolved-relation");
 const CONDITION: Fixture = fixture!("09-vacuous-condition");
+const CONFLICT: Fixture = fixture!("06-minimal-conflict");
+const CYCLE: Fixture = fixture!("04-relation-cycle");
 
 /// The section file of RFC 0001 that each fixture holds.
 const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
@@ -148,6 +150,47 @@ fn a_composition_logic_and_a_condition_state_their_formulas() {
 }
 
 #[test]
+fn a_conflicts_with_relation_states_the_negation_of_both() {
+    let tree = rendered(&CONFLICT);
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(lines(&report), CONFLICT.expected, "{backend}");
+        let atoms = [
+            held("EX-0001-001", "MUST"),
+            held("EX-0001-002", "MUST"),
+            held("EX-0001-003", "SHOULD"),
+        ];
+        assert_eq!(report.formulas.atoms, atoms, "{backend}");
+        let formulas = [
+            "8 EX-0001-001: EX-0001-001",
+            "14 EX-0001-002: EX-0001-002",
+            "18 EX-0001-002: !(EX-0001-002 & EX-0001-001) (conflicts_with EX-0001-001)",
+            "21 EX-0001-003: EX-0001-003",
+        ];
+        assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
+        assert!(report.formulas.conditions.is_empty(), "{backend}");
+    }
+}
+
+#[test]
+fn implies_and_refines_relations_state_an_implication() {
+    let tree = rendered(&CYCLE);
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(lines(&report), CYCLE.expected, "{backend}");
+        let atoms = [held("EX-0001-001", "MUST"), held("EX-0001-002", "SHOULD")];
+        assert_eq!(report.formulas.atoms, atoms, "{backend}");
+        let formulas = [
+            "8 EX-0001-001: EX-0001-001",
+            "12 EX-0001-001: (EX-0001-001 -> EX-0001-002) (implies EX-0001-002)",
+            "15 EX-0001-002: EX-0001-002",
+            "19 EX-0001-002: (EX-0001-002 -> EX-0001-001) (refines EX-0001-001)",
+        ];
+        assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
+    }
+}
+
+#[test]
 fn a_tree_without_a_configuration_returns_an_empty_formula_set() {
     for (backend, check) in backends() {
         let report = check(&Tree::default(), &Options::default());
@@ -163,7 +206,7 @@ mod binary {
     use partimento::Tree;
 
     use super::common::fails;
-    use super::{rendered, Fixture, CONDITION, RELATION};
+    use super::{rendered, Fixture, CONDITION, CONFLICT, RELATION};
 
     fn run(dir: &Path, args: &[&str]) -> Output {
         let program = env!("CARGO_BIN_EXE_partimento");
@@ -219,11 +262,24 @@ mod binary {
     }
 
     #[test]
+    fn the_command_writes_the_formula_set_of_a_conflict() {
+        let json = formulas("formulas-conflict", &CONFLICT);
+        let expected = include_str!("formula-sets/06-minimal-conflict.json");
+        assert_eq!(json, expected);
+    }
+
+    #[test]
     fn formulas_without_a_file_exits_with_2() {
         let dir = scratch("formulas-missing");
-        let output = run(&dir, &["check", "--formulas"]);
-        assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        for args in [&["check", "--formulas"][..], &["check", "--formulas", "--root", "tree"]] {
+            let output = run(&dir, args);
+            assert_eq!(output.status.code(), Some(2), "{args:?}");
+            assert!(output.stdout.is_empty(), "{args:?}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let message = "partimento: --formulas needs a file\n";
+            assert!(stderr.starts_with(message), "{args:?}: {stderr}");
+        }
+        assert!(!dir.join("--root").exists());
     }
 
     #[test]
@@ -235,5 +291,10 @@ mod binary {
         let output = run(&dir, &args);
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
+        // The check ran and its write failed: stderr holds the write's error alone, without the
+        // usage text an argument error prints.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.starts_with("partimento: formulas.json: "), "{stderr}");
+        assert_eq!(stderr.lines().count(), 1, "{stderr}");
     }
 }
