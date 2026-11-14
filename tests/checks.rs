@@ -47,6 +47,18 @@ const FIXTURES: &[Fixture] = &[
         "rfcs/0200-scheduling/rfc.toml",
         "rfcs/0200-scheduling/01-schedule.toml"
     ),
+    fixture!("29-unresolved-parts"),
+    fixture!(
+        "30-boundary-parts",
+        "rfcs/0200-scheduling/rfc.toml",
+        "rfcs/0200-scheduling/01-schedule.toml"
+    ),
+    fixture!("31-first-level"),
+    fixture!(
+        "32-bounds-across-rfcs",
+        "rfcs/0002-farewells/rfc.toml",
+        "rfcs/0002-farewells/01-farewell.toml"
+    ),
 ];
 
 /// The listed fixture of that name.
