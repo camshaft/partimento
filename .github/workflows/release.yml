@@ -11,7 +11,9 @@ name: release
 #   - `plan` reads Cargo.toml's version, and asks for the programs where the tag v<version> doesn't
 #     exist yet and this push is the merge of the release pull request, the one push that can
 #     create the tag, or where the tag's release lacks an archive or its sum.
-#   - `binaries` builds them from that commit with the read-only token.
+#   - `binaries` builds them with the read-only token from the commit the tag is on or goes on:
+#     release-plz tags the release pull request's last commit where the pull request merged with a
+#     merge commit, and the pushed commit otherwise.
 #   - `release` attaches each missing file to the release v<version> once the tag exists, and
 #     creates the release where the tag has none, so a release published in an earlier run without
 #     its programs gets them on the next run.
@@ -62,14 +64,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Read Cargo.toml's version, and decide whether this run builds the programs and from which
-  # commit: this commit where the tag v<version> doesn't exist yet and this push is the merge of
-  # the release pull request, or the tag's commit where its release lacks an archive or its sum.
+  # commit: the commit release-plz tags where the tag v<version> doesn't exist yet and this push is
+  # the merge of the release pull request, or the tag's commit where its release lacks an archive or
+  # its sum.
   plan:
     name: plan the programs
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read # list the pull requests this push's commit belongs to
+      pull-requests: read # read this push's pull requests and the release pull request's commits
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       commit: ${{ steps.plan.outputs.commit }}
@@ -96,8 +99,8 @@ jobs:
             # No tag of this version yet. release-plz.toml sets `release_always = false`, so
             # `release` creates the tag only where this commit belongs to a pull request whose
             # branch starts with release-plz's `pr_branch_prefix`: the merge of the release pull
-            # request. Build this commit on that push alone.
-            echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            # request. Build on that push alone.
+            commit="$GITHUB_SHA"
             prefix="$(python3 -c 'import tomllib; print(tomllib.load(open("release-plz.toml", "rb")).get("workspace", {}).get("pr_branch_prefix", "release-plz-"))')"
             code="$(curl -sS -o pulls.json -w '%{http_code}' \
               -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
@@ -113,7 +116,27 @@ jobs:
               match=0
               jq -e --arg prefix "$prefix" 'any(.[]; (.head.ref // "") | startswith($prefix))' pulls.json > /dev/null || match=$?
               case "$match" in
-                0) build=true ;;
+                0)
+                  build=true
+                  # release-plz tags the release pull request's last commit instead of this one
+                  # where the two differ and the last commit is in this one's history, as after a
+                  # merge with a merge commit (`should_release` in release-plz's command/release.rs).
+                  # It reads one page of the pull request's commits, at GitHub's default page size,
+                  # and uses that page's last entry: read the same page, so that this run builds the
+                  # commit the tag goes on. Where that read fails, build this commit.
+                  number="$(jq -r --arg prefix "$prefix" 'first(.[] | select((.head.ref // "") | startswith($prefix))) | .number' pulls.json)"
+                  code="$(curl -sS -o commits.json -w '%{http_code}' \
+                    -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                    "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$number/commits" || true)"
+                  if [ "$code" != 200 ]; then
+                    echo "::warning::Reading the commits of pull request #$number answered HTTP $code, so this run builds $GITHUB_SHA."
+                  elif ! last="$(jq -r 'if type == "array" then (.[-1].sha // "") else error("not a list of commits") end' commits.json)"; then
+                    echo "::warning::jq couldn't read the commits of pull request #$number, so this run builds $GITHUB_SHA."
+                  elif [[ "$last" =~ ^[0-9a-f]{40}$ ]] && [ "$last" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$last" "$GITHUB_SHA" 2> /dev/null; then
+                    echo "release-plz tags pull request #$number's last commit, $last, which is in the history of $GITHUB_SHA: this run builds it."
+                    commit="$last"
+                  fi
+                  ;;
                 1)
                   echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs."
                   build=false
@@ -124,6 +147,7 @@ jobs:
                   ;;
               esac
             fi
+            echo "commit=$commit" >> "$GITHUB_OUTPUT"
             echo "build=$build" >> "$GITHUB_OUTPUT"
             exit 0
           fi
