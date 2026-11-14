@@ -1,0 +1,5 @@
+target = "docs/text/0204-greetings/01-greeting.md#ZQ-0204-002"
+
+[[spec]]
+level = "OUGHT"
+quote = "The program OUGHT NOT greet the person twice."

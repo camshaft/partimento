@@ -1,0 +1,5 @@
+target = "docs/text/0204-greetings/01-greeting.md#ZQ-0204-001"
+
+[[spec]]
+level = "SHALL"
+quote = "The program SHALL greet the person when it starts."

@@ -1,0 +1,5 @@
+target = "docs/text/0204-greetings/01-greeting.md#ZQ-0204-003"
+
+[[spec]]
+level = "CAN"
+quote = "The program CAN keep each greeting in sqlite."
