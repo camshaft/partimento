@@ -1,0 +1,5 @@
+number = 2
+title = "Farewells"
+area = "core"
+abstract = "How the program says goodbye to a person when it stops."
+retired = []
