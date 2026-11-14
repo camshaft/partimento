@@ -225,24 +225,32 @@ fn a_file_that_doesnt_parse_reports_the_same_findings_from_the_cache() {
 
 #[test]
 fn a_damaged_artifact_is_read_from_the_file_again() {
-    let tree = fixture();
-    let expected = uncached(&tree);
-    for damage in [emptied, cut_short, lengthened] {
-        let cache = Damaged {
-            kept: Memory::default(),
-            damage,
-        };
-        assert_eq!(cached(&tree, &cache), expected);
-        assert_eq!(cached(&tree, &cache), expected);
-        assert_eq!(cache.kept.returned.get(), 3);
+    // The fixture breaks a format rule, so its check keeps the two section files' loads and the
+    // result of checks 1 and 2. The rendered tree renders, so its check keeps each section's
+    // files too, and a damaged one is rendered again.
+    for (tree, artifacts) in [(fixture(), 3), (rendered(), 5)] {
+        let expected = uncached(&tree);
+        for damage in [emptied, cut_short, lengthened] {
+            let cache = Damaged {
+                kept: Memory::default(),
+                damage,
+            };
+            assert_eq!(cached(&tree, &cache), expected);
+            assert_eq!(cached(&tree, &cache), expected);
+            assert_eq!(cache.kept.returned.get(), artifacts);
+        }
     }
 }
 
 #[test]
 fn a_cache_that_doesnt_keep_artifacts_isnt_asked_for_one() {
-    let (tree, cache) = (fixture(), Forgetful::default());
-    assert_eq!(cached(&tree, &cache), uncached(&tree));
-    assert_eq!(cache.calls.get(), 0);
+    // The rendered tree renders, so its check reaches the render's artifacts, which the fixture's
+    // check doesn't.
+    for tree in [fixture(), rendered()] {
+        let cache = Forgetful::default();
+        assert_eq!(cached(&tree, &cache), uncached(&tree));
+        assert_eq!(cache.calls.get(), 0);
+    }
     assert!(!NoCache.keeps());
     assert!(Memory::default().keeps());
 }
