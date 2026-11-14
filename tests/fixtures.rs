@@ -116,13 +116,16 @@ fn with_rfcs(value: &str) -> Tree {
     let mut tree = tree(&FIXTURES[1]);
     let spec = include_str!("fixtures/05-key-word/spec.toml");
     let spec = spec.replace("rfcs = \"rfcs\"", &format!("rfcs = {value:?}"));
-    tree.files.insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree.files
+        .insert("spec.toml".to_string(), ByteVec::from(spec));
     tree
 }
 
 #[test]
 fn a_path_that_leaves_the_tree_fails_at_spec_toml() {
-    let outside = ["", "/", "/home", "..", "../..", "rfcs/..", "./rfcs", "rfcs/", "rfcs//x"];
+    let outside = [
+        "", "/", "/home", "..", "../..", "rfcs/..", "./rfcs", "rfcs/", "rfcs//x",
+    ];
     let other_forms = ["rfcs\\x", "c:rfcs"];
     for value in outside.iter().chain(other_forms.iter()) {
         let report = partimento::check_default(&with_rfcs(value), &Options::default());
@@ -231,7 +234,10 @@ mod binary {
         std::fs::write(dir.join("spec.toml"), spec).expect("the file is written");
         let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.starts_with("error[config] spec.toml:6: `paths.rfcs`"), "{stdout}");
+        assert!(
+            stdout.starts_with("error[config] spec.toml:6: `paths.rfcs`"),
+            "{stdout}"
+        );
         assert_eq!(stdout.lines().count(), 1, "{stdout}");
         assert_eq!(output.status.code(), Some(1));
     }

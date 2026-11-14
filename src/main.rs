@@ -163,7 +163,10 @@ fn is_link(path: &Path) -> bool {
 }
 
 fn link(path: &Path) -> String {
-    format!("{}: a symbolic link, which the command doesn't follow", path.display())
+    format!(
+        "{}: a symbolic link, which the command doesn't follow",
+        path.display()
+    )
 }
 
 fn text(report: &Report) -> String {
