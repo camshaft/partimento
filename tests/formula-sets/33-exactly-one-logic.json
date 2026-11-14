@@ -1,0 +1,14 @@
+{
+"atoms": [
+{"id":"EX-0001-001","rfc":1,"section":"rfcs/0001-greetings/01-greeting.toml","level":"MUST","polarity":"required"},
+{"id":"EX-0001-002","rfc":1,"section":"rfcs/0001-greetings/01-greeting.toml","level":"SHOULD","polarity":"required"},
+{"id":"EX-0001-003","rfc":1,"section":"rfcs/0001-greetings/01-greeting.toml","level":"MAY","polarity":"required"},
+{"id":"EX-0001-004","rfc":1,"section":"rfcs/0001-greetings/01-greeting.toml","level":"SHOULD","polarity":"required"}
+],
+"formulas": [
+{"formula":{"atom":"EX-0001-001"},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":8},"relation":null},
+{"formula":{"iff":[{"atom":"EX-0001-001"},{"or":[{"atom":"EX-0001-002"},{"atom":"EX-0001-003"},{"atom":"EX-0001-004"}]}]},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":12},"relation":null},
+{"formula":{"exactly_one":[{"atom":"EX-0001-002"},{"atom":"EX-0001-003"},{"not":{"atom":"EX-0001-004"}}]},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":14},"relation":null}
+],
+"conditions": []
+}

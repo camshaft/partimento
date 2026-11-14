@@ -16,6 +16,7 @@ const RELATION: Fixture = fixture!("03-unresolved-relation");
 const CONDITION: Fixture = fixture!("09-vacuous-condition");
 const CONFLICT: Fixture = fixture!("06-minimal-conflict");
 const CYCLE: Fixture = fixture!("04-relation-cycle");
+const EXACTLY_ONE: Fixture = fixture!("33-exactly-one-logic");
 
 /// The section file of RFC 0001 that each fixture holds.
 const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
@@ -173,6 +174,29 @@ fn a_conflicts_with_relation_states_the_negation_of_both() {
 }
 
 #[test]
+fn a_logic_exactly_one_states_its_parts_in_order() {
+    let tree = rendered(&EXACTLY_ONE);
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(lines(&report), EXACTLY_ONE.expected, "{backend}");
+        let atoms = [
+            held("EX-0001-001", "MUST"),
+            held("EX-0001-002", "SHOULD"),
+            held("EX-0001-003", "MAY"),
+            held("EX-0001-004", "SHOULD"),
+        ];
+        assert_eq!(report.formulas.atoms, atoms, "{backend}");
+        let formulas = [
+            "8 EX-0001-001: EX-0001-001",
+            "12 EX-0001-001: (EX-0001-001 <-> (EX-0001-002 | EX-0001-003 | EX-0001-004))",
+            "14 EX-0001-001: exactly_one(EX-0001-002, EX-0001-003, !EX-0001-004)",
+        ];
+        assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
+        assert!(report.formulas.conditions.is_empty(), "{backend}");
+    }
+}
+
+#[test]
 fn implies_and_refines_relations_state_an_implication() {
     let tree = rendered(&CYCLE);
     for (backend, check) in backends() {
@@ -206,7 +230,7 @@ mod binary {
     use partimento::Tree;
 
     use super::common::fails;
-    use super::{rendered, Fixture, CONDITION, CONFLICT, RELATION};
+    use super::{rendered, Fixture, CONDITION, CONFLICT, EXACTLY_ONE, RELATION};
 
     fn run(dir: &Path, args: &[&str]) -> Output {
         let program = env!("CARGO_BIN_EXE_partimento");
@@ -265,6 +289,13 @@ mod binary {
     fn the_command_writes_the_formula_set_of_a_conflict() {
         let json = formulas("formulas-conflict", &CONFLICT);
         let expected = include_str!("formula-sets/06-minimal-conflict.json");
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn the_command_writes_the_formula_set_of_an_exactly_one() {
+        let json = formulas("formulas-exactly-one", &EXACTLY_ONE);
+        let expected = include_str!("formula-sets/33-exactly-one-logic.json");
         assert_eq!(json, expected);
     }
 
