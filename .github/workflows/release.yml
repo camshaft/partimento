@@ -234,7 +234,9 @@ jobs:
           merge-multiple: true
       # Attach each file the release v<version> lacks: this run's release, or one an earlier run
       # published without its programs. Where no tag of the version exists yet, as on a push that
-      # releases nothing, it doesn't attach anything.
+      # releases nothing, it doesn't attach anything. Where the tag is at another commit than this
+      # run built, as on a push that races a release, it doesn't attach the programs either: the
+      # next run builds from the tag's commit where its release still lacks a file.
       - name: Attach the programs to the release
         if: ${{ needs.plan.outputs.build == 'true' }}
         env:
@@ -249,8 +251,8 @@ jobs:
             exit 0
           fi
           if [ "$commit" != "$BUILT" ]; then
-            echo "The tag $TAG is at $commit, but the programs were built from $BUILT." >&2
-            exit 1
+            echo "::notice::The tag $TAG is at $commit, but this run built the programs from $BUILT, so it doesn't attach them."
+            exit 0
           fi
           code="$(curl -sS -o release.json -w '%{http_code}' \
             -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
