@@ -1,0 +1,4 @@
+error[key-word] rfcs/0001-greetings/01-greeting.toml:11: EX-0001-001: the statement says SHOULD, and `level` and `polarity` say MUST
+error[key-word] rfcs/0001-greetings/01-greeting.toml:17: EX-0001-002: the statement holds 2 key words, and it needs exactly one
+error[key-word] rfcs/0001-greetings/01-greeting.toml:29: EX-0001-004: the statement says MUST, and `level` and `polarity` say MUST NOT
+error[key-word] rfcs/0001-greetings/01-greeting.toml:35: EX-0001-005: the statement doesn't hold a key word; it needs SHOULD
