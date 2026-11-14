@@ -29,6 +29,9 @@ pub enum Formula {
     And(Vec<Formula>),
     /// True where a part is true; an empty disjunction is false.
     Or(Vec<Formula>),
+    /// True where exactly one part is true; with no part, false.
+    #[serde(rename = "exactly_one")]
+    ExactlyOne(Vec<Formula>),
     Implies(Box<Formula>, Box<Formula>),
     Iff(Box<Formula>, Box<Formula>),
 }
@@ -56,15 +59,10 @@ impl Formula {
         Formula::Or(parts)
     }
 
-    /// Exactly one of the parts is true: at least one, and no two together.
+    /// Exactly one of the parts is true: at least one, and no two together. The formula holds
+    /// each part once, and its encoding adds clauses linear in the count of parts.
     pub fn exactly_one(parts: Vec<Formula>) -> Self {
-        let mut all = vec![Formula::Or(parts.clone())];
-        for (i, first) in parts.iter().enumerate() {
-            for second in &parts[i + 1..] {
-                all.push(Formula::And(vec![first.clone(), second.clone()]).not());
-            }
-        }
-        Formula::And(all)
+        Formula::ExactlyOne(parts)
     }
 
     /// Folds the formula from its atoms up: `visit` is called on each formula after its parts,
@@ -85,7 +83,7 @@ impl Formula {
                     match formula {
                         Formula::Atom(_) => {}
                         Formula::Not(inner) => steps.push(Step::Enter(inner)),
-                        Formula::And(parts) | Formula::Or(parts) => {
+                        Formula::And(parts) | Formula::Or(parts) | Formula::ExactlyOne(parts) => {
                             steps.extend(parts.iter().rev().map(Step::Enter));
                         }
                         Formula::Implies(a, b) | Formula::Iff(a, b) => {
@@ -99,6 +97,7 @@ impl Formula {
                         Formula::Atom(_) => 0,
                         Formula::Not(_) => 1,
                         Formula::And(parts) | Formula::Or(parts) => parts.len(),
+                        Formula::ExactlyOne(parts) => parts.len(),
                         Formula::Implies(..) | Formula::Iff(..) => 2,
                     };
                     let value = visit(formula, values.drain(values.len() - count..));
@@ -121,7 +120,7 @@ impl Formula {
         match self {
             Formula::Atom(_) => {}
             Formula::Not(inner) => take(inner, pending),
-            Formula::And(parts) | Formula::Or(parts) => {
+            Formula::And(parts) | Formula::Or(parts) | Formula::ExactlyOne(parts) => {
                 for part in parts {
                     take(part, pending);
                 }
@@ -141,6 +140,7 @@ impl Clone for Formula {
             Formula::Not(_) => next_part(&mut parts).not(),
             Formula::And(_) => Formula::And(parts.collect()),
             Formula::Or(_) => Formula::Or(parts.collect()),
+            Formula::ExactlyOne(_) => Formula::ExactlyOne(parts.collect()),
             Formula::Implies(..) => next_part(&mut parts).implies(next_part(&mut parts)),
             Formula::Iff(..) => next_part(&mut parts).iff(next_part(&mut parts)),
         })
@@ -210,6 +210,10 @@ impl fmt::Display for Formula {
                 Step::Part(Formula::Or(parts)) => {
                     f.write_str("(")?;
                     join(&mut steps, parts, " | ");
+                }
+                Step::Part(Formula::ExactlyOne(parts)) => {
+                    f.write_str("exactly_one(")?;
+                    join(&mut steps, parts, ", ");
                 }
                 Step::Part(Formula::Implies(a, b)) => {
                     f.write_str("(")?;
@@ -672,6 +676,7 @@ impl<B: Backend> Encoding<B> {
                 self.backend.add_clause(&any_true);
                 x
             }
+            Formula::ExactlyOne(_) => self.exactly_one_of(lits),
             Formula::Implies(..) => {
                 let a = next_part(&mut lits);
                 let b = next_part(&mut lits);
@@ -693,12 +698,65 @@ impl<B: Backend> Encoding<B> {
             }
         })
     }
+
+    /// A literal equivalent to exactly one of `lits` being true, with clauses linear in their
+    /// count: walking `lits` in order, `some` holds where at least one of the literals so far is
+    /// true and `two` where at least two are, and the result holds where `some` does and `two`
+    /// doesn't. With no literal, the result is false.
+    fn exactly_one_of(&mut self, lits: impl IntoIterator<Item = Lit>) -> Lit {
+        let mut some: Option<Lit> = None;
+        let mut two: Option<Lit> = None;
+        for lit in lits {
+            let before = match some {
+                Some(before) => before,
+                None => {
+                    some = Some(lit);
+                    continue;
+                }
+            };
+            // The next `two` holds where `two` did, or where `before` and `lit` both hold.
+            let next_two = self.backend.new_var();
+            match two {
+                Some(two) => {
+                    self.backend.add_clause(&[!next_two, two, before]);
+                    self.backend.add_clause(&[!next_two, two, lit]);
+                    self.backend.add_clause(&[next_two, !two]);
+                }
+                None => {
+                    self.backend.add_clause(&[!next_two, before]);
+                    self.backend.add_clause(&[!next_two, lit]);
+                }
+            }
+            self.backend.add_clause(&[next_two, !before, !lit]);
+            // The next `some` holds where `before` or `lit` does.
+            let next_some = self.backend.new_var();
+            self.backend.add_clause(&[!next_some, before, lit]);
+            self.backend.add_clause(&[next_some, !before]);
+            self.backend.add_clause(&[next_some, !lit]);
+            some = Some(next_some);
+            two = Some(next_two);
+        }
+        match (some, two) {
+            (None, _) => self.constant(false),
+            (Some(some), None) => some,
+            (Some(some), Some(two)) => {
+                let x = self.backend.new_var();
+                self.backend.add_clause(&[!x, some]);
+                self.backend.add_clause(&[!x, !two]);
+                self.backend.add_clause(&[x, !some, two]);
+                x
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
     use super::{parse, Encoding, Entry, Formula, FormulaSet, Origin};
-    use crate::solver::{Answer, Backend};
+    use crate::solver::{Answer, Backend, Lit};
 
     fn a(name: &str) -> Formula {
         Formula::atom(name)
@@ -751,10 +809,7 @@ mod tests {
         );
         assert_eq!(
             parse("exactly_one(A, B)").unwrap(),
-            Formula::And(vec![
-                Formula::Or(vec![a("A"), a("B")]),
-                Formula::And(vec![a("A"), a("B")]).not(),
-            ])
+            Formula::ExactlyOne(vec![a("A"), a("B")])
         );
         assert_eq!(parse("at_least_one").unwrap(), a("at_least_one"));
     }
@@ -831,13 +886,17 @@ mod tests {
 
     /// Each formula is encoded as itself: the encoding agrees with the formula's truth table.
     fn encoding_agrees_with_truth_tables<B: Backend + Default>() {
-        let cases: [(&str, Table); 6] = [
+        let cases: [(&str, Table); 10] = [
             ("A & B", |x, y| x && y),
             ("A | B", |x, y| x || y),
             ("A -> B", |x, y| !x || y),
             ("A <-> B", |x, y| x == y),
             ("!(A & !B)", |x, y| !(x && !y)),
             ("exactly_one(A, B)", |x, y| x != y),
+            ("exactly_one(A)", |x, _| x),
+            ("exactly_one(A, B, A)", |x, y| !x && y),
+            ("exactly_one(A, B, !A)", |_, y| !y),
+            ("!exactly_one(A, B, !B)", |x, _| x),
         ];
         for (text, table) in cases {
             let mut encoding = Encoding::new(B::default(), &set(&[text, "A | !A", "B | !B"]));
@@ -976,6 +1035,98 @@ mod tests {
         assert!(sat(&mut encoding, &[("A", false)]));
     }
 
+    /// A backend that counts the clauses an encoding adds to the backend it wraps.
+    struct Counted<B> {
+        backend: B,
+        clauses: Rc<Cell<usize>>,
+    }
+
+    impl<B: Backend> Backend for Counted<B> {
+        fn new_var(&mut self) -> Lit {
+            self.backend.new_var()
+        }
+
+        fn add_clause(&mut self, clause: &[Lit]) {
+            self.clauses.set(self.clauses.get() + 1);
+            self.backend.add_clause(clause);
+        }
+
+        fn solve(&mut self, assumptions: &[Lit]) -> Answer {
+            self.backend.solve(assumptions)
+        }
+    }
+
+    /// The encoding of the formula `text`, and the count of clauses it added.
+    fn counted<B: Backend + Default>(text: &str) -> (Encoding<Counted<B>>, usize) {
+        let clauses = Rc::new(Cell::new(0));
+        let backend = Counted {
+            backend: B::default(),
+            clauses: Rc::clone(&clauses),
+        };
+        let encoding = Encoding::new(backend, &set(&[text]));
+        (encoding, clauses.get())
+    }
+
+    /// Each of `names`, true where `true_at` holds its index and false elsewhere.
+    fn assume<'n>(names: &'n [String], true_at: &[usize]) -> Vec<(&'n str, bool)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.as_str(), true_at.contains(&i)))
+            .collect()
+    }
+
+    /// The count of parts of the wide `exactly_one` test.
+    const PARTS: usize = 100_000;
+
+    /// An `exactly_one` of `PARTS` atoms reads, prints and clones as itself, and encodes in
+    /// clauses linear in its parts, true where exactly one of them is.
+    fn wide_exactly_one<B: Backend + Default>() {
+        let names: Vec<String> = (0..PARTS).map(|i| format!("P{i}")).collect();
+        let text = format!("exactly_one({})", names.join(", "));
+        let formula = parse(&text).unwrap();
+        let parts: Vec<Formula> = names.iter().map(Formula::atom).collect();
+        assert_eq!(formula, Formula::ExactlyOne(parts));
+        assert_eq!(formula.to_string(), text);
+        assert_eq!(formula.clone().to_string(), text);
+        let (mut encoding, clauses) = counted::<B>(&text);
+        assert!(clauses <= 8 * PARTS, "{clauses} clauses for {PARTS} parts");
+        assert!(!sat(&mut encoding, &assume(&names, &[])));
+        for part in [0, PARTS / 2, PARTS - 1] {
+            assert!(sat(&mut encoding, &assume(&names, &[part])), "P{part} alone");
+        }
+        assert!(!sat(&mut encoding, &assume(&names, &[0, PARTS - 1])));
+        assert!(!sat(&mut encoding, &assume(&names, &[PARTS / 2, PARTS / 2 + 1])));
+    }
+
+    /// An `exactly_one(B, ...)` nested `DEPTH` deep reads, prints, clones, drops and encodes
+    /// with each part once, so its clauses grow with the depth alone. A call over `B` and a part
+    /// `F` holds where `B` and `F` differ, so an even count of calls holds where `A` does.
+    fn nested_exactly_one<B: Backend + Default>() {
+        let text = format!("{}A{}", "exactly_one(B, ".repeat(DEPTH), ")".repeat(DEPTH));
+        let formula = parse(&text).unwrap();
+        let mut inner = &formula;
+        let mut calls = 0;
+        while let Formula::ExactlyOne(parts) = inner {
+            assert_eq!(parts.len(), 2);
+            assert_eq!(parts[0], a("B"));
+            inner = &parts[1];
+            calls += 1;
+        }
+        assert_eq!(calls, DEPTH);
+        assert_eq!(*inner, a("A"));
+        assert_eq!(formula.to_string(), text);
+        assert_eq!(formula.clone().to_string(), text);
+        let (mut encoding, clauses) = counted::<B>(&text);
+        assert!(clauses <= 10 * DEPTH, "{clauses} clauses for {DEPTH} calls");
+        for x in [false, true] {
+            for y in [false, true] {
+                let holds = if DEPTH % 2 == 0 { x } else { x != y };
+                assert_eq!(sat(&mut encoding, &[("A", x), ("B", y)]), holds, "A={x} B={y}");
+            }
+        }
+    }
+
     crate::solver::backend_tests!(
         encoding_agrees_with_truth_tables,
         selectors_switch_formulas,
@@ -984,5 +1135,7 @@ mod tests {
         deep_parentheses,
         deep_calls,
         deep_implications,
+        wide_exactly_one,
+        nested_exactly_one,
     );
 }
