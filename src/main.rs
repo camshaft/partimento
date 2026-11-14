@@ -103,6 +103,15 @@ fn read_tree(root: &Path) -> Result<Tree, String> {
     };
     let paths = &config.paths;
     for dir in [&paths.rfcs, &paths.rendered, &paths.requirements] {
+        // A link at any part of the path, and not only at its last, would take the read outside
+        // the tree, so each part is checked from the root.
+        let mut part = root.to_path_buf();
+        for name in dir.split('/') {
+            part.push(name);
+            if is_link(&part) {
+                return Err(link(&part));
+            }
+        }
         read_dir(root, dir, &mut tree.files)?;
     }
     Ok(tree)

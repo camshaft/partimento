@@ -274,4 +274,20 @@ mod binary {
         symlink(dir.join("real.toml"), dir.join("spec.toml")).expect("the link is made");
         exits_with_2(&dir, "spec.toml: a symbolic link");
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_in_an_earlier_part_of_a_path_exits_with_2() {
+        use std::os::unix::fs::symlink;
+
+        let target = scratch("linked-part-target");
+        let dir = scratch("linked-part");
+        write_fixture(&dir);
+        let spec = std::fs::read_to_string(dir.join("spec.toml")).expect("the file is read");
+        let spec = spec.replace("rfcs = \"rfcs\"", "rfcs = \"docs/rfcs\"");
+        std::fs::write(dir.join("spec.toml"), spec).expect("the file is written");
+        std::fs::rename(dir.join("rfcs"), target.join("rfcs")).expect("the directory is moved");
+        symlink(&target, dir.join("docs")).expect("the link is made");
+        exits_with_2(&dir, "docs: a symbolic link");
+    }
 }
