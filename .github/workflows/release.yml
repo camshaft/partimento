@@ -107,11 +107,22 @@ jobs:
               # programs.
               echo "::warning::Reading the pull requests of $GITHUB_SHA answered HTTP $code, so this run builds the programs."
               build=true
-            elif jq -e --arg prefix "$prefix" 'any(.[]; (.head.ref // "") | startswith($prefix))' pulls.json > /dev/null; then
-              build=true
             else
-              echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs."
-              build=false
+              # jq exits 0 where one of them is the release pull request, 1 where none is, and
+              # above 1 where it can't read the answer, which builds as a failed read does.
+              match=0
+              jq -e --arg prefix "$prefix" 'any(.[]; (.head.ref // "") | startswith($prefix))' pulls.json > /dev/null || match=$?
+              case "$match" in
+                0) build=true ;;
+                1)
+                  echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs."
+                  build=false
+                  ;;
+                *)
+                  echo "::warning::jq couldn't read the pull requests of $GITHUB_SHA (exit status $match), so this run builds the programs."
+                  build=true
+                  ;;
+              esac
             fi
             echo "build=$build" >> "$GITHUB_OUTPUT"
             exit 0
