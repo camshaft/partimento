@@ -8,6 +8,12 @@
 //! retired from the tree at `<base>` to the tree at `<head>` and exits with 0. Where either tree
 //! fails a format rule, it prints that tree's failing findings instead and exits with 1, and it
 //! exits with 2 where the arguments are wrong or a file can't be read.
+//!
+//! `partimento render [--root <dir>] [--format text|json]` writes each generated file that differs
+//! from the tree, removes each file under the generated directories that the render doesn't
+//! generate, prints nothing and exits with 0. Where the set breaks a format rule, it prints the
+//! findings of the format rules, writes nothing and exits with 1; where the arguments are wrong or
+//! a file can't be read or written, it exits with 2.
 
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write as _};
@@ -19,6 +25,7 @@ use partimento::{config, ByteVec, Change, Finding, Options, Tree};
 
 const USAGE: &str = concat!(
     "usage: partimento check [--root <dir>] [--format text|json] [--final]\n",
+    "       partimento render [--root <dir>] [--format text|json]\n",
     "       partimento diff <base> <head> [--format text|json]",
 );
 
@@ -31,6 +38,8 @@ enum Format {
 enum Command {
     /// `check`, of the tree at a root.
     Check(PathBuf, Options),
+    /// `render`, of the tree at a root.
+    Render(PathBuf),
     /// `diff`, from the tree at a base to the tree at a head.
     Diff(PathBuf, PathBuf),
 }
@@ -73,6 +82,7 @@ fn run(args: &Args) -> Result<ExitCode, String> {
                 Err(findings) => (findings_output(&findings, args.format), true),
             }
         }
+        Command::Render(root) => return render(root, &read_tree(root)?, args.format),
     };
     print!("{output}");
     Ok(ExitCode::from(u8::from(failed)))
@@ -81,6 +91,7 @@ fn run(args: &Args) -> Result<ExitCode, String> {
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     match args.next().as_deref() {
         Some("check") => parse_check(args),
+        Some("render") => parse_render(args),
         Some("diff") => parse_diff(args),
         Some(command) => Err(format!("`{command}` isn't a command")),
         None => Err("the command is missing".to_string()),
@@ -103,6 +114,23 @@ fn parse_check(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         }
     }
     let command = Command::Check(root, options);
+    Ok(Args { command, format })
+}
+
+fn parse_render(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut root = PathBuf::from(".");
+    let mut format = Format::Text;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => {
+                let dir = args.next().ok_or("--root needs a directory")?;
+                root = PathBuf::from(dir);
+            }
+            "--format" => format = parse_format(args.next())?,
+            _ => return Err(format!("`{arg}` isn't an argument of `render`")),
+        }
+    }
+    let command = Command::Render(root);
     Ok(Args { command, format })
 }
 
@@ -133,6 +161,71 @@ fn parse_format(value: Option<String>) -> Result<Format, String> {
     }
 }
 
+/// Renders the tree, and writes its generated files under `root`, or prints the findings that
+/// stop the render; the exit code, or why a file can't be written.
+fn render(root: &Path, tree: &Tree, format: Format) -> Result<ExitCode, String> {
+    let generated = match partimento::render(tree) {
+        Ok(generated) => generated,
+        Err(findings) => {
+            print!("{}", findings_output(&findings, format));
+            return Ok(ExitCode::from(1));
+        }
+    };
+    // A tree that renders holds a configuration that loads.
+    let dirs = match config::load(tree, &mut Vec::new()) {
+        Some(config) => vec![config.paths.rendered, config.paths.requirements],
+        None => Vec::new(),
+    };
+    write(root, tree, &generated, &dirs)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Removes each file of the tree under the generated directories `dirs` that the render doesn't
+/// generate, with each directory above it that the removal leaves empty, and writes each generated
+/// file that the tree doesn't hold byte for byte.
+fn write(root: &Path, tree: &Tree, generated: &Tree, dirs: &[String]) -> Result<(), String> {
+    for path in tree.files.keys() {
+        let under = |dir: &String| path.starts_with(&format!("{dir}/"));
+        if !dirs.iter().any(under) || generated.files.contains_key(path) {
+            continue;
+        }
+        let file = root.join(path);
+        fs::remove_file(&file).map_err(|error| io_error(&file, &error))?;
+        remove_empty(root, path, dirs)?;
+    }
+    for (path, bytes) in &generated.files {
+        if tree.files.get(path) == Some(bytes) {
+            continue;
+        }
+        let file = root.join(path);
+        if let Some(parent) = file.parent() {
+            fs::create_dir_all(parent).map_err(|error| io_error(parent, &error))?;
+        }
+        let data = bytes.copy_to_bytes().to_vec();
+        fs::write(&file, data).map_err(|error| io_error(&file, &error))?;
+    }
+    Ok(())
+}
+
+/// Removes each directory above `path` that is empty, from the nearest, up to the generated
+/// directory that holds it, which stays.
+fn remove_empty(root: &Path, path: &str, dirs: &[String]) -> Result<(), String> {
+    let mut rest = path;
+    while let Some((parent, _)) = rest.rsplit_once('/') {
+        if dirs.iter().any(|dir| dir == parent) {
+            break;
+        }
+        let dir = root.join(parent);
+        let mut entries = fs::read_dir(&dir).map_err(|error| io_error(&dir, &error))?;
+        if entries.next().is_some() {
+            break;
+        }
+        fs::remove_dir(&dir).map_err(|error| io_error(&dir, &error))?;
+        rest = parent;
+    }
+    Ok(())
+}
+
 /// Reads spec.toml and each file under the set's directories that spec.toml lists.
 fn read_tree(root: &Path) -> Result<Tree, String> {
     let mut tree = Tree::default();
@@ -140,7 +233,7 @@ fn read_tree(root: &Path) -> Result<Tree, String> {
     if is_link(&spec) {
         return Err(link(&spec));
     }
-    let bytes = fs::read(&spec).map_err(|error| unreadable(&spec, &error))?;
+    let bytes = fs::read(&spec).map_err(|error| io_error(&spec, &error))?;
     let file = config::FILE.to_string();
     tree.files.insert(file, ByteVec::from(bytes));
 
@@ -175,9 +268,9 @@ fn read_dir(root: &Path, dir: &str, files: &mut BTreeMap<String, ByteVec>) -> Re
     let entries = match fs::read_dir(&path) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(unreadable(&path, &error)),
+        Err(error) => return Err(io_error(&path, &error)),
     };
-    let failed = |error: io::Error| unreadable(&path, &error);
+    let failed = |error: io::Error| io_error(&path, &error);
     let mut names = Vec::new();
     for entry in entries {
         let entry = entry.map_err(failed)?;
@@ -202,14 +295,14 @@ fn read_dir(root: &Path, dir: &str, files: &mut BTreeMap<String, ByteVec>) -> Re
             read_dir(root, &relative, files)?;
         } else {
             let file = root.join(&relative);
-            let bytes = fs::read(&file).map_err(|error| unreadable(&file, &error))?;
+            let bytes = fs::read(&file).map_err(|error| io_error(&file, &error))?;
             files.insert(relative, ByteVec::from(bytes));
         }
     }
     Ok(())
 }
 
-fn unreadable(path: &Path, error: &io::Error) -> String {
+fn io_error(path: &Path, error: &io::Error) -> String {
     format!("{}: {error}", path.display())
 }
 

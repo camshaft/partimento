@@ -25,12 +25,17 @@ const SPEC: &str = include_str!("fixtures/configuration/spec.toml");
 const SHARED_SPEC: &str = include_str!("fixtures/14-implementation-term/spec.toml");
 
 /// The fixture's files. Its RFCs are under `docs/sources`, the directory its spec.toml sets as
-/// `paths.rfcs`.
+/// `paths.rfcs`, and its generated files under `docs/text` and `trace/requirements`, the
+/// directories it sets as `paths.rendered` and `paths.requirements`.
 const FILES: &[(&str, &str)] = &[
     ("spec.toml", SPEC),
     embed!("docs/sources/index.toml"),
     embed!("docs/sources/0204-greetings/rfc.toml"),
     embed!("docs/sources/0204-greetings/01-greeting.toml"),
+    embed!("docs/text/0204-greetings/01-greeting.md"),
+    embed!("trace/requirements/0204-greetings/01-greeting/ZQ-0204-001.toml"),
+    embed!("trace/requirements/0204-greetings/01-greeting/ZQ-0204-002.toml"),
+    embed!("trace/requirements/0204-greetings/01-greeting/ZQ-0204-003.toml"),
 ];
 
 fn tree(files: &[(&str, &str)]) -> Tree {
