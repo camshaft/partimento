@@ -725,7 +725,7 @@ table = { key = "value", nested = { list = [] } }
 "#;
 
     /// A section whose `[section]` table and first block hold the fields of `values`, each at a
-    /// line of its own, and whose second block holds no field.
+    /// line of its own, and whose second block has no field.
     fn section(values: &str) -> Section {
         let table: toml::Table = toml::from_str(values).expect("the test's values parse");
         let fields = |first: u32| -> Vec<Field> {

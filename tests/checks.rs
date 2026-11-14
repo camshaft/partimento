@@ -42,8 +42,8 @@ const FIXTURES: &[Fixture] = &[
     fixture!("29-supersedes-self"),
     fixture!(
         "24-contract-logic",
-        "rfcs/0100-handoff/rfc.toml",
-        "rfcs/0100-handoff/01-handoff.toml",
+        "rfcs/0100-transfer/rfc.toml",
+        "rfcs/0100-transfer/01-transfer.toml",
         "rfcs/0200-scheduling/rfc.toml",
         "rfcs/0200-scheduling/01-schedule.toml"
     ),

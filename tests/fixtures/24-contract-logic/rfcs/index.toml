@@ -6,7 +6,7 @@ state = "written"
 
 [[rfc]]
 number = 100
-title = "Handoff"
+title = "Transfer"
 area = "contracts"
 state = "written"
 

@@ -2,7 +2,7 @@
 //! clauses a solver reads.
 //!
 //! Each requirement identifier is a propositional atom. The checker turns each formula of the set
-//! into clauses by the Tseitin transform, and gives each formula a selector literal, so that the
+//! into clauses by the Tseitin transform, and assigns each formula a selector literal, so that the
 //! formula holds only where its selector is assumed true.
 //!
 //! The parser and each walk of a formula, its clone, drop, comparison, debug output, display and

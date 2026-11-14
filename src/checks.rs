@@ -228,7 +228,7 @@ impl<'a> Context<'a> {
             Some(kind @ ("all_of" | "any_of" | "exactly_one")) => {
                 if parts.is_empty() {
                     let message = format!(
-                        "`{kind}` holds no part: `parts` lists the requirements it composes"
+                        "`{kind}` has no part: `parts` lists the requirements it composes"
                     );
                     self.error(COMPOSITION, r, compose_line, message);
                 } else {
@@ -269,7 +269,7 @@ impl<'a> Context<'a> {
                 }
             }
             None | Some("atomic") if !parts.is_empty() => {
-                let message = "an `atomic` requirement holds no parts: `compose` sets `all_of`, \
+                let message = "an `atomic` requirement has no parts: `compose` sets `all_of`, \
                                `any_of`, `exactly_one` or `unless` for them";
                 self.error(COMPOSITION, r, parts_line, message.to_string());
             }
@@ -613,7 +613,7 @@ impl<'a> Context<'a> {
     }
 
     /// Finds each held requirement that a held requirement's `supersedes` relation retires,
-    /// before any requirement is built, so the checks read only the requirements in force.
+    /// before any requirement is built, so the checks read only the requirements that still apply.
     /// Each requirement of a cycle of `supersedes` relations, a requirement that supersedes
     /// itself among them, gets a finding, since the cycle retires each of them and nothing
     /// replaces them.

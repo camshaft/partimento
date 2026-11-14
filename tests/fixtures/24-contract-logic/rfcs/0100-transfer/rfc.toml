@@ -1,5 +1,5 @@
 number = 100
-title = "Handoff"
+title = "Transfer"
 area = "contracts"
 abstract = "How the greeting hands its job to the schedule."
 retired = []
