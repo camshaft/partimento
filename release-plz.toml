@@ -1,0 +1,4 @@
+[workspace]
+# Publish only on the merge of the release pull request that release-plz opens, never on another
+# push to main.
+release_always = false
