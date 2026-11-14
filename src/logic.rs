@@ -570,9 +570,12 @@ mod tests {
         encoding.solve(&assumptions) == Answer::Sat
     }
 
+    /// A formula over `A` and `B`, as its truth table.
+    type Table = fn(bool, bool) -> bool;
+
     /// Each formula is encoded as itself: the encoding agrees with the formula's truth table.
     fn encoding_agrees_with_truth_tables<B: Backend + Default>() {
-        let cases: [(&str, fn(bool, bool) -> bool); 6] = [
+        let cases: [(&str, Table); 6] = [
             ("A & B", |x, y| x && y),
             ("A | B", |x, y| x || y),
             ("A -> B", |x, y| !x || y),

@@ -182,7 +182,9 @@ impl<'a> Context<'a> {
         let compose = block.text("compose");
         let compose_line = line_of(block, "compose");
         let parts = strings(block.field("parts"));
-        let parts_line = block.field("parts").map_or(compose_line, |field| field.line);
+        let parts_line = block
+            .field("parts")
+            .map_or(compose_line, |field| field.line);
         let conditions = strings(block.field("conditions"));
 
         // A requirement holds by itself unless it holds under conditions, a composition holds
@@ -401,10 +403,17 @@ impl<'a> Context<'a> {
     /// The system an RFC is of, where it isn't a contract RFC.
     fn system_of(&self, number: u32) -> Option<&'a str> {
         let config = self.config;
-        if config.contracts.as_ref().is_some_and(|range| range.contains(number)) {
+        if config
+            .contracts
+            .as_ref()
+            .is_some_and(|range| range.contains(number))
+        {
             return None;
         }
-        let system = config.systems.iter().find(|system| system.rfcs.contains(number));
+        let system = config
+            .systems
+            .iter()
+            .find(|system| system.rfcs.contains(number));
         system.map(|system| system.name.as_str())
     }
 
@@ -422,7 +431,9 @@ impl<'a> Context<'a> {
         for component in components(&edges) {
             let first = component[0];
             let cyclic = component.len() > 1
-                || edges.get(first).is_some_and(|targets| targets.contains(first));
+                || edges
+                    .get(first)
+                    .is_some_and(|targets| targets.contains(first));
             let Some(&index) = self.held.get(first) else {
                 continue;
             };
@@ -432,9 +443,8 @@ impl<'a> Context<'a> {
             let r = self.requirements[index];
             let members: Vec<String> = component.iter().map(|id| format!("`{id}`")).collect();
             let members = members.join(", ");
-            let message = format!(
-                "`implies` and `refines` relations form a cycle through {members}"
-            );
+            let message =
+                format!("`implies` and `refines` relations form a cycle through {members}");
             self.error(RELATION_CYCLE, r, line_of(r.block, "relations"), message);
         }
     }
@@ -505,7 +515,8 @@ impl<'a> Context<'a> {
                 let others = others.join(", ");
                 format!("`{}` can't hold together with {others}", entry.formula)
             };
-            self.found.push(at_origin(UNSATISFIABLE, &entry.origin, message));
+            self.found
+                .push(at_origin(UNSATISFIABLE, &entry.origin, message));
         }
         for &index in &found.vacuous {
             let condition = &self.set.conditions[index];
@@ -514,7 +525,8 @@ impl<'a> Context<'a> {
                 "`{atom}` can't be true while the rest of the set holds, so this requirement \
                  holds only vacuously"
             );
-            self.found.push(at_origin(CONDITION_VACUOUS, &condition.origin, message));
+            self.found
+                .push(at_origin(CONDITION_VACUOUS, &condition.origin, message));
         }
     }
 
@@ -549,28 +561,42 @@ fn problem(interval: &Interval<'_>, name: &str, bound: &str, value: f64) -> Opti
         "exact" => {
             if let Some(exact) = interval.exact {
                 let exact = at(exact);
-                Some(format!("`{name}` has a second exact value, {value}, beside {exact}"))
+                Some(format!(
+                    "`{name}` has a second exact value, {value}, beside {exact}"
+                ))
             } else if let Some(min) = below(interval.min) {
-                Some(format!("`{name}`'s exact value {value} is below its minimum {min}"))
+                Some(format!(
+                    "`{name}`'s exact value {value} is below its minimum {min}"
+                ))
             } else {
                 let max = above(interval.max)?;
-                Some(format!("`{name}`'s exact value {value} is above its maximum {max}"))
+                Some(format!(
+                    "`{name}`'s exact value {value} is above its maximum {max}"
+                ))
             }
         }
         "min" => {
             if let Some(max) = above(interval.max) {
-                Some(format!("`{name}`'s minimum {value} is above its maximum {max}"))
+                Some(format!(
+                    "`{name}`'s minimum {value} is above its maximum {max}"
+                ))
             } else {
                 let exact = above(interval.exact)?;
-                Some(format!("`{name}`'s minimum {value} is above its exact value {exact}"))
+                Some(format!(
+                    "`{name}`'s minimum {value} is above its exact value {exact}"
+                ))
             }
         }
         _ => {
             if let Some(min) = below(interval.min) {
-                Some(format!("`{name}`'s maximum {value} is below its minimum {min}"))
+                Some(format!(
+                    "`{name}`'s maximum {value} is below its minimum {min}"
+                ))
             } else {
                 let exact = below(interval.exact)?;
-                Some(format!("`{name}`'s maximum {value} is below its exact value {exact}"))
+                Some(format!(
+                    "`{name}`'s maximum {value} is below its exact value {exact}"
+                ))
             }
         }
     }
@@ -669,7 +695,11 @@ fn line_of(block: &Block, key: &str) -> u32 {
 /// The strings of an array field.
 fn strings(field: Option<&Field>) -> Vec<&str> {
     let items = field.and_then(|field| field.value.as_array());
-    items.into_iter().flatten().filter_map(Value::as_str).collect()
+    items
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect()
 }
 
 /// The string of a table's key.
