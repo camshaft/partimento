@@ -975,10 +975,11 @@ pub fn consistency<B: Backend + Default>(set: &FormulaSet) -> Consistency {
     Consistency { conflict, vacuous }
 }
 
-/// The result of checks 1 and 2 over `set`, as [`consistency`] returns it, read from `cache` where
-/// it keeps one for the set's formulas and conditions. Only a result without a conflict is kept:
-/// its conditions that can't hold are the same under every backend, while a conflict's minimal
-/// subset starts from the backend's core.
+/// The result of checks 1 and 2 over `set`, as [`consistency`] returns it under the backend `B`,
+/// read from `cache` where it keeps one for `B`'s type name and the set's formulas and conditions.
+/// Every result is kept, a conflict too: its key holds `B`'s type name, since a conflict's minimal
+/// subset starts from the backend's core, so a check with a cache returns what a check with
+/// [`NoCache`] returns under the same backend.
 pub(crate) fn cached_consistency<B: Backend + Default, C: Cache>(
     set: &FormulaSet,
     cache: &C,
@@ -986,20 +987,14 @@ pub(crate) fn cached_consistency<B: Backend + Default, C: Cache>(
     if !cache.keeps() {
         return consistency::<B>(set);
     }
-    let key = artifact::consistency_key(set);
-    let conditions = set.conditions.len();
+    let key = artifact::consistency_key(std::any::type_name::<B>(), set);
     let kept = cache.get(&key);
-    let vacuous = kept.and_then(|bytes| artifact::decode_consistency(&bytes, conditions));
-    if let Some(vacuous) = vacuous {
-        return Consistency {
-            conflict: None,
-            vacuous,
-        };
+    let read = kept.and_then(|bytes| artifact::decode_consistency(&bytes, set));
+    if let Some(read) = read {
+        return read;
     }
     let found = consistency::<B>(set);
-    if found.conflict.is_none() {
-        cache.put(key, artifact::encode_consistency(&found.vacuous));
-    }
+    cache.put(key, artifact::encode_consistency(&found));
     found
 }
 
@@ -1218,7 +1213,7 @@ mod tests {
     fn a_consistent_result_is_read_from_the_cache<B: Backend + Default>() {
         let cache = Memory::default();
         let consistent = set(&["e -> f", "e -> !f"], &["e", "f"]);
-        let found = cached_consistency::<B, _>(&consistent, &cache);
+        let found = cached_consistency::<Counted<B>, _>(&consistent, &cache);
         assert_eq!(found, consistency::<B>(&consistent));
         assert_eq!(found.vacuous, vec![0]);
         assert_eq!(cache.0.borrow().len(), 1);
@@ -1228,19 +1223,34 @@ mod tests {
         assert_eq!(SOLVES.with(std::cell::Cell::get), 0);
     }
 
-    fn a_conflict_isnt_kept<B: Backend + Default>() {
+    fn a_conflict_is_read_from_the_cache<B: Backend + Default>() {
         let cache = Memory::default();
-        let conflicting = set(&["a", "!a"], &["a"]);
+        let conflicting = set(&["a", "b", "!a"], &["a"]);
+        let found = cached_consistency::<Counted<B>, _>(&conflicting, &cache);
+        assert_eq!(found, consistency::<B>(&conflicting));
+        assert_eq!(found.conflict, Some(vec![0, 2]));
+        assert_eq!(cache.0.borrow().len(), 1);
+        SOLVES.with(|count| count.set(0));
+        let read = cached_consistency::<Counted<B>, _>(&conflicting, &cache);
+        assert_eq!(read, found);
+        assert_eq!(SOLVES.with(std::cell::Cell::get), 0);
+    }
+
+    fn each_backend_keeps_its_own_result<B: Backend + Default>() {
+        let cache = Memory::default();
+        let conflicting = set(&["a", "!a", "b", "!b"], &["a"]);
         let found = cached_consistency::<B, _>(&conflicting, &cache);
         assert_eq!(found, consistency::<B>(&conflicting));
-        assert!(found.conflict.is_some());
-        assert!(cache.0.borrow().is_empty());
+        let wide = cached_consistency::<Wide<B>, _>(&conflicting, &cache);
+        assert_eq!(wide, consistency::<Wide<B>>(&conflicting));
+        assert_eq!(cache.0.borrow().len(), 2);
     }
 
     crate::solver::backend_tests!(
         empty_set,
         a_consistent_result_is_read_from_the_cache,
-        a_conflict_isnt_kept,
+        a_conflict_is_read_from_the_cache,
+        each_backend_keeps_its_own_result,
         one_solve_per_distinct_atom,
         consistent_set,
         conflict_is_minimal,

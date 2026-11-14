@@ -9,9 +9,9 @@
 //! returns bytes that don't decode to a whole load, so a damaged entry doesn't change a report.
 //!
 //! Two artifacts follow from the set's loads. The result of checks 1 and 2 for the set's formulas
-//! is kept under a key of the formulas and of the conditions' atoms, and only where the formulas
-//! hold together: a conflict's minimal subset starts from the backend's core, and the conditions
-//! that can't hold don't depend on the backend. The files a section generates are kept under a
+//! is kept under a key of the backend's type name, the formulas and the conditions' atoms, a
+//! conflict too: a conflict's minimal subset starts from the backend's core, so a result kept for
+//! one backend isn't read for another. The files a section generates are kept under a
 //! key of each part of the section that a render reads and of the two paths the files go under.
 //! Their keys hold the crate's version and the build's identity too, and each of their encodings
 //! ends with its digest, as a section's load does.
@@ -24,6 +24,7 @@ use std::sync::OnceLock;
 
 use toml::Value;
 
+use crate::checks::Consistency;
 use crate::logic::{Formula, FormulaSet};
 use crate::model::{load_section, Block, Field, Section};
 use crate::render::{Generated, Paths, Section as Rendered};
@@ -212,20 +213,35 @@ pub(crate) fn decode_section(bytes: &ByteVec) -> Option<(Vec<Finding>, Option<Se
     reader.bytes.is_empty().then_some((findings, section))
 }
 
-/// The key of checks 1 and 2's result for `set`: its formulas in order and its conditions' atoms
-/// in order. It leaves out where each formula and condition comes from, which doesn't change the
-/// result, and the backend, since only a result without a conflict is kept.
-pub(crate) fn consistency_key(set: &FormulaSet) -> Key {
-    consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING, &formulas(set))
+/// The key of checks 1 and 2's result for `set` under the backend whose type name is `backend`:
+/// the backend's type name, the set's formulas in order and its conditions' atoms in order. It
+/// holds the backend, since a conflict's minimal subset starts from the backend's core, so another
+/// backend can find another subset. It leaves out where each formula and condition comes from,
+/// which doesn't change the result.
+pub(crate) fn consistency_key(backend: &str, set: &FormulaSet) -> Key {
+    consistency_key_of(
+        VERSION,
+        BUILD,
+        CONSISTENCY_ENCODING,
+        backend,
+        &formulas(set),
+    )
 }
 
-fn consistency_key_of(version: &str, build: &str, encoding: u32, formulas: &[u8]) -> Key {
+fn consistency_key_of(
+    version: &str,
+    build: &str,
+    encoding: u32,
+    backend: &str,
+    formulas: &[u8],
+) -> Key {
     let encoding = encoding.to_le_bytes();
-    let parts: [&[u8]; 5] = [
+    let parts: [&[u8]; 6] = [
         CONSISTENCY,
         version.as_bytes(),
         build.as_bytes(),
         &encoding,
+        backend.as_bytes(),
         formulas,
     ];
     key(&parts)
@@ -246,28 +262,52 @@ fn formulas(set: &FormulaSet) -> Vec<u8> {
     writer.bytes
 }
 
-/// The encoding of checks 1 and 2's result for a formula set whose formulas hold together: the
-/// indexes of the conditions that can't hold.
-pub(crate) fn encode_consistency(vacuous: &[usize]) -> ByteVec {
+/// The encoding of checks 1 and 2's result for a formula set: whether it found a conflict, the
+/// indexes of the conflict's formulas where it did, and the indexes of the conditions that can't
+/// hold.
+pub(crate) fn encode_consistency(found: &Consistency) -> ByteVec {
     let mut writer = Writer::default();
-    writer.count(vacuous.len());
-    for &index in vacuous {
-        writer.count(index);
+    writer.boolean(found.conflict.is_some());
+    if let Some(conflict) = &found.conflict {
+        write_indexes(&mut writer, conflict);
     }
+    write_indexes(&mut writer, &found.vacuous);
     ByteVec::from(seal(writer.bytes))
 }
 
-/// The indexes of the conditions that can't hold that `bytes` encode, where they are a whole
-/// encoding whose digest holds, each index is below `conditions` and each is above the one before
-/// it.
-pub(crate) fn decode_consistency(bytes: &ByteVec, conditions: usize) -> Option<Vec<usize>> {
+fn write_indexes(writer: &mut Writer, indexes: &[usize]) {
+    writer.count(indexes.len());
+    for &index in indexes {
+        writer.count(index);
+    }
+}
+
+/// The result of checks 1 and 2 for `set` that `bytes` encode, where they are a whole encoding
+/// whose digest holds, each list of indexes rises, each conflict index is below the count of the
+/// set's formulas, each condition index is below the count of its conditions, and a result with a
+/// conflict has no condition that can't hold.
+pub(crate) fn decode_consistency(bytes: &ByteVec, set: &FormulaSet) -> Option<Consistency> {
     let bytes = bytes.copy_to_bytes();
     let body = unseal(&bytes)?;
     let mut reader = Reader { bytes: body };
+    let conflict = if reader.boolean()? {
+        Some(reader.list(Reader::count)?)
+    } else {
+        None
+    };
     let vacuous = reader.list(Reader::count)?;
-    let rising = vacuous.windows(2).all(|pair| pair[0] < pair[1]);
-    let within = vacuous.iter().all(|&index| index < conditions);
-    (reader.bytes.is_empty() && rising && within).then_some(vacuous)
+    let conflict_fits = match &conflict {
+        Some(conflict) => rise_within(conflict, set.formulas.len()) && vacuous.is_empty(),
+        None => true,
+    };
+    let fits = conflict_fits && rise_within(&vacuous, set.conditions.len());
+    (reader.bytes.is_empty() && fits).then_some(Consistency { conflict, vacuous })
+}
+
+/// Whether each of `indexes` is above the one before it and below `count`.
+fn rise_within(indexes: &[usize], count: usize) -> bool {
+    let rising = indexes.windows(2).all(|pair| pair[0] < pair[1]);
+    rising && indexes.iter().all(|&index| index < count)
 }
 
 /// The key of the files `section` generates: the two paths they go under, and each part of the
@@ -1021,24 +1061,26 @@ table = { key = "value", nested = { list = [] } }
     #[test]
     fn each_input_of_a_consistency_key_changes_it() {
         let set = formula_set(&["a -> b", "!(a & c)"], &["a"]);
-        let key = consistency_key(&set);
+        let name = "a backend";
+        let key = consistency_key(name, &set);
         let body = formulas(&set);
         assert_eq!(
-            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING, &body),
+            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING, name, &body),
             key
         );
         assert_ne!(
-            consistency_key_of("0.0.0-other", BUILD, CONSISTENCY_ENCODING, &body),
+            consistency_key_of("0.0.0-other", BUILD, CONSISTENCY_ENCODING, name, &body),
             key
         );
         assert_ne!(
-            consistency_key_of(VERSION, "other build", CONSISTENCY_ENCODING, &body),
+            consistency_key_of(VERSION, "other build", CONSISTENCY_ENCODING, name, &body),
             key
         );
         assert_ne!(
-            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING + 1, &body),
+            consistency_key_of(VERSION, BUILD, CONSISTENCY_ENCODING + 1, name, &body),
             key
         );
+        assert_ne!(consistency_key("another backend", &set), key);
         let others = [
             formula_set(&["a -> b"], &["a"]),
             formula_set(&["a -> b", "!(a & c)", "c"], &["a"]),
@@ -1051,34 +1093,70 @@ table = { key = "value", nested = { list = [] } }
             formula_set(&["a -> b", "!(a & c)"], &[]),
         ];
         for other in &others {
-            assert_ne!(consistency_key(other), key, "{other:?}");
+            assert_ne!(consistency_key(name, other), key, "{other:?}");
         }
         // Where each formula and condition comes from doesn't change the result or the key.
         let mut moved = set.clone();
         moved.formulas[0].origin.line = 9;
         moved.conditions[0].origin.file = "rfcs/b.toml".to_owned();
-        assert_eq!(consistency_key(&moved), key);
+        assert_eq!(consistency_key(name, &moved), key);
     }
 
     #[test]
     fn a_consistency_result_decodes_where_its_indexes_rise_and_fit() {
-        let artifact = encode_consistency(&[0, 2]);
-        assert_eq!(decode_consistency(&artifact, 3), Some(vec![0, 2]));
-        assert_eq!(decode_consistency(&artifact, 2), None);
-        assert_eq!(
-            decode_consistency(&encode_consistency(&[]), 0),
-            Some(Vec::new())
-        );
-        assert_eq!(decode_consistency(&encode_consistency(&[2, 0]), 3), None);
-        assert_eq!(decode_consistency(&encode_consistency(&[1, 1]), 3), None);
-        let bytes = artifact.copy_to_bytes().to_vec();
-        for end in 0..bytes.len() {
-            let cut = ByteVec::from(bytes[..end].to_vec());
-            assert!(decode_consistency(&cut, 3).is_none(), "{end}");
+        let set = formula_set(&["a", "b", "c", "d"], &["a", "b", "c"]);
+        let consistent = Consistency {
+            conflict: None,
+            vacuous: vec![0, 2],
+        };
+        let conflicting = Consistency {
+            conflict: Some(vec![1, 3]),
+            vacuous: Vec::new(),
+        };
+        for found in [&consistent, &conflicting] {
+            let artifact = encode_consistency(found);
+            assert_eq!(decode_consistency(&artifact, &set).as_ref(), Some(found));
+            let bytes = artifact.copy_to_bytes().to_vec();
+            for end in 0..bytes.len() {
+                let cut = ByteVec::from(bytes[..end].to_vec());
+                assert!(decode_consistency(&cut, &set).is_none(), "{end}");
+            }
+            let mut body = bytes[..bytes.len() - DIGEST].to_vec();
+            body.push(0);
+            let sealed = ByteVec::from(seal(body));
+            assert!(decode_consistency(&sealed, &set).is_none());
         }
+        // A condition that can't hold is below the count of the set's conditions, and a
+        // conflict's formula is below the count of its formulas.
+        let fewer_conditions = formula_set(&["a", "b", "c", "d"], &["a", "b"]);
+        let kept = encode_consistency(&consistent);
+        assert!(decode_consistency(&kept, &fewer_conditions).is_none());
+        let fewer_formulas = formula_set(&["a", "b", "c"], &["a", "b", "c"]);
+        let kept = encode_consistency(&conflicting);
+        assert!(decode_consistency(&kept, &fewer_formulas).is_none());
+        let empty = encode_consistency(&Consistency::default());
+        let decoded = decode_consistency(&empty, &FormulaSet::default());
+        assert_eq!(decoded, Some(Consistency::default()));
+        let wrong = [
+            (None, vec![2, 0]),
+            (None, vec![1, 1]),
+            (None, vec![3]),
+            (Some(vec![2, 0]), Vec::new()),
+            (Some(vec![1, 1]), Vec::new()),
+            (Some(vec![4]), Vec::new()),
+            (Some(vec![0]), vec![0]),
+        ];
+        for (conflict, vacuous) in wrong {
+            let found = Consistency { conflict, vacuous };
+            let kept = encode_consistency(&found);
+            assert!(decode_consistency(&kept, &set).is_none(), "{found:?}");
+        }
+        // The byte that says whether the result found a conflict is neither 0 nor 1.
+        let bytes = encode_consistency(&consistent).copy_to_bytes().to_vec();
         let mut body = bytes[..bytes.len() - DIGEST].to_vec();
-        body.push(0);
-        assert!(decode_consistency(&ByteVec::from(seal(body)), 3).is_none());
+        body[0] = 2;
+        let sealed = ByteVec::from(seal(body));
+        assert!(decode_consistency(&sealed, &set).is_none());
     }
 
     const PATHS: Paths<'static> = Paths {
