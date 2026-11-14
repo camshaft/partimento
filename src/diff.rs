@@ -267,13 +267,69 @@ fn same(a: &Value, b: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use toml::Value;
+    use toml::{Table, Value};
 
-    use super::{same, same_items};
+    use super::{same, same_items, same_requirement};
+    use crate::model::{Block, Field};
+
+    /// A block of the required fields alone, so that each compared field reads at its default.
+    const PLAIN: &str = r#"id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting."
+"#;
+
+    /// A block that writes each compared field, with `compose` other than its default and an item
+    /// in each list.
+    const FULL: &str = r#"id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting."
+conditions = ["EX-0001-002"]
+compose = "all_of"
+parts = ["EX-0001-003"]
+relations = [{ kind = "depends_on", target = "EX-0001-004" }]
+logic = ["EX-0001-002"]
+params = [{ name = "delay", value = 5 }]
+binds_to = "system"
+"#;
+
+    /// A change of each compared field of `FULL` that fixture 15 doesn't change alone. A fixture
+    /// can't change `level` or `polarity` alone, since its statement would then fail the key-word
+    /// rule, so these tests compare the blocks with `same_requirement`.
+    const CHANGES: &[&str] = &[
+        r#"level = "SHOULD""#,
+        r#"polarity = "forbidden""#,
+        r#"conditions = ["EX-0001-005"]"#,
+        r#"compose = "any_of""#,
+        r#"parts = ["EX-0001-006"]"#,
+        r#"relations = [{ kind = "depends_on", target = "EX-0001-007" }]"#,
+        r#"logic = ["EX-0001-005"]"#,
+        r#"params = [{ name = "delay", value = 10 }]"#,
+    ];
 
     fn list(items: &[&str]) -> Value {
         let item = |text: &&str| Value::String((*text).to_string());
         Value::Array(items.iter().map(item).collect())
+    }
+
+    /// The block that `text`, a TOML table, holds, with each field of `changes`, a TOML table too,
+    /// set to its value there.
+    fn block(text: &str, changes: &str) -> Block {
+        let mut table: Table = toml::from_str(text).expect("the test's block parses");
+        let changes: Table = toml::from_str(changes).expect("the test's change parses");
+        for (key, value) in changes {
+            table.insert(key, value);
+        }
+        let fields = table
+            .into_iter()
+            .map(|(key, value)| Field {
+                key,
+                line: 1,
+                value,
+            })
+            .collect();
+        Block { line: 1, fields }
     }
 
     #[test]
@@ -297,5 +353,27 @@ mod tests {
         let a = Value::Array(vec![list(&["a", "b"])]);
         let b = Value::Array(vec![list(&["b", "a"])]);
         assert!(!same_items(&a, &b));
+    }
+
+    #[test]
+    fn a_change_of_each_compared_field_alone_changes_the_requirement() {
+        let base = block(FULL, "");
+        assert!(same_requirement(&base, &block(FULL, "")));
+        for change in CHANGES {
+            let head = block(FULL, change);
+            assert_eq!(head.fields.len(), base.fields.len(), "{change}");
+            assert!(!same_requirement(&base, &head), "{change}");
+            assert!(!same_requirement(&head, &base), "{change}");
+        }
+    }
+
+    #[test]
+    fn conditions_written_out_empty_are_the_conditions_left_out() {
+        let left_out = block(PLAIN, "");
+        let written = block(PLAIN, "conditions = []");
+        assert!(left_out.field("conditions").is_none());
+        assert!(written.field("conditions").is_some());
+        assert!(same_requirement(&left_out, &written));
+        assert!(same_requirement(&written, &left_out));
     }
 }
