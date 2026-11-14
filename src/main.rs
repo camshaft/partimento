@@ -1,18 +1,26 @@
-//! The `partimento` command: reads a specification tree from disk and runs the library on it.
+//! The `partimento` command: reads specification trees from disk and runs the library on them.
 //!
 //! `partimento check [--root <dir>] [--format text|json] [--final]` prints each finding and exits
 //! with 0 where no finding fails the check, 1 where one does, and 2 where the arguments are wrong
 //! or a file can't be read.
+//!
+//! `partimento diff <base> <head> [--format text|json]` prints each requirement added, changed or
+//! retired from the tree at `<base>` to the tree at `<head>` and exits with 0. Where either tree
+//! fails a format rule, it prints that tree's failing findings instead and exits with 1, and it
+//! exits with 2 where the arguments are wrong or a file can't be read.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
+use std::fmt::{Display, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fs, io};
 
-use partimento::{config, ByteVec, Finding, Options, Report, Tree};
+use partimento::{config, ByteVec, Change, Finding, Options, Tree};
 
-const USAGE: &str = "usage: partimento check [--root <dir>] [--format text|json] [--final]";
+const USAGE: &str = concat!(
+    "usage: partimento check [--root <dir>] [--format text|json] [--final]\n",
+    "       partimento diff <base> <head> [--format text|json]",
+);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Format {
@@ -20,10 +28,16 @@ enum Format {
     Json,
 }
 
+enum Command {
+    /// `check`, of the tree at a root.
+    Check(PathBuf, Options),
+    /// `diff`, from the tree at a base to the tree at a head.
+    Diff(PathBuf, PathBuf),
+}
+
 struct Args {
-    root: PathBuf,
+    command: Command,
     format: Format,
-    options: Options,
 }
 
 fn main() -> ExitCode {
@@ -35,55 +49,87 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let tree = match read_tree(&args.root) {
-        Ok(tree) => tree,
+    match run(&args) {
+        Ok(code) => code,
         Err(message) => {
             eprintln!("partimento: {message}");
-            return ExitCode::from(2);
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// Runs the command and prints its output; the exit code, or why a file can't be read.
+fn run(args: &Args) -> Result<ExitCode, String> {
+    let (output, failed) = match &args.command {
+        Command::Check(root, options) => {
+            let report = partimento::check_default(&read_tree(root)?, options);
+            (findings_output(&report.findings, args.format), report.failed())
+        }
+        Command::Diff(base, head) => {
+            let (base, head) = (read_tree(base)?, read_tree(head)?);
+            match partimento::diff(&base, &head) {
+                Ok(changes) => (changes_output(&changes, args.format), false),
+                Err(findings) => (findings_output(&findings, args.format), true),
+            }
         }
     };
-    let report = partimento::check_default(&tree, &args.options);
-    let output = match args.format {
-        Format::Text => text(&report),
-        Format::Json => json(&report),
-    };
     print!("{output}");
-    if report.failed() {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    }
+    Ok(ExitCode::from(u8::from(failed)))
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     match args.next().as_deref() {
-        Some("check") => {}
-        Some(command) => return Err(format!("`{command}` isn't a command")),
-        None => return Err("the command is missing".to_string()),
+        Some("check") => parse_check(args),
+        Some("diff") => parse_diff(args),
+        Some(command) => Err(format!("`{command}` isn't a command")),
+        None => Err("the command is missing".to_string()),
     }
-    let mut parsed = Args {
-        root: PathBuf::from("."),
-        format: Format::Text,
-        options: Options::default(),
-    };
+}
+
+fn parse_check(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut root = PathBuf::from(".");
+    let mut format = Format::Text;
+    let mut options = Options::default();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--root" => {
-                let root = args.next().ok_or("--root needs a directory")?;
-                parsed.root = PathBuf::from(root);
+                let dir = args.next().ok_or("--root needs a directory")?;
+                root = PathBuf::from(dir);
             }
-            "--format" => {
-                parsed.format = match args.next().as_deref() {
-                    Some("text") => Format::Text,
-                    Some("json") => Format::Json,
-                    _ => return Err("--format needs `text` or `json`".to_string()),
-                };
-            }
-            "--final" => parsed.options.final_pass = true,
+            "--format" => format = parse_format(args.next())?,
+            "--final" => options.final_pass = true,
             _ => return Err(format!("`{arg}` isn't an argument of `check`")),
         }
     }
-    Ok(parsed)
+    let command = Command::Check(root, options);
+    Ok(Args { command, format })
+}
+
+fn parse_diff(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut format = Format::Text;
+    let mut dirs = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--format" => format = parse_format(args.next())?,
+            _ if arg.starts_with("--") => {
+                return Err(format!("`{arg}` isn't an argument of `diff`"));
+            }
+            _ => dirs.push(PathBuf::from(&arg)),
+        }
+    }
+    let Ok([base, head]) = <[PathBuf; 2]>::try_from(dirs) else {
+        return Err("`diff` needs two directories, <base> and <head>".to_string());
+    };
+    let command = Command::Diff(base, head);
+    Ok(Args { command, format })
+}
+
+fn parse_format(value: Option<String>) -> Result<Format, String> {
+    match value.as_deref() {
+        Some("text") => Ok(Format::Text),
+        Some("json") => Ok(Format::Json),
+        _ => Err("--format needs `text` or `json`".to_string()),
+    }
 }
 
 /// Reads spec.toml and each file under the set's directories that spec.toml lists.
@@ -178,20 +224,36 @@ fn link(path: &Path) -> String {
     )
 }
 
-fn text(report: &Report) -> String {
+/// The findings as text, one a line, or as a JSON array.
+fn findings_output(findings: &[Finding], format: Format) -> String {
+    match format {
+        Format::Text => lines(findings),
+        Format::Json => json_array(findings.iter().map(json_finding)),
+    }
+}
+
+/// The changes as text, one a line, or as a JSON array.
+fn changes_output(changes: &[Change], format: Format) -> String {
+    match format {
+        Format::Text => lines(changes),
+        Format::Json => json_array(changes.iter().map(json_change)),
+    }
+}
+
+fn lines(items: &[impl Display]) -> String {
     let mut output = String::new();
-    for finding in &report.findings {
-        let _ = writeln!(output, "{finding}");
+    for item in items {
+        let _ = writeln!(output, "{item}");
     }
     output
 }
 
-/// The findings as a JSON array, one finding an element, each on a line of its own.
-fn json(report: &Report) -> String {
-    if report.findings.is_empty() {
+/// The items as a JSON array, one item an element, each on a line of its own.
+fn json_array(items: impl Iterator<Item = String>) -> String {
+    let items: Vec<String> = items.collect();
+    if items.is_empty() {
         return "[]\n".to_string();
     }
-    let items: Vec<String> = report.findings.iter().map(json_finding).collect();
     format!("[\n{}\n]\n", items.join(",\n"))
 }
 
@@ -209,6 +271,13 @@ fn json_finding(finding: &Finding) -> String {
         "{{\"severity\":{severity},\"rule\":{rule},\"file\":{file},\"line\":{line},\
          \"requirement\":{requirement},\"message\":{message}}}"
     )
+}
+
+fn json_change(change: &Change) -> String {
+    let kind = json_string(change.kind.as_str());
+    let requirement = json_string(&change.requirement);
+    let binds_to = json_string(change.binds_to.as_str());
+    format!("{{\"kind\":{kind},\"requirement\":{requirement},\"binds_to\":{binds_to}}}")
 }
 
 fn json_string(text: &str) -> String {
