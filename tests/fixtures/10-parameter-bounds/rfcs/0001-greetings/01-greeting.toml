@@ -1,0 +1,33 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting of at most 80 characters."
+params = [{ name = "greeting.length", bound = "max", value = 80 }]
+
+[[requirement]]
+id = "EX-0001-002"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD print a greeting of at least 100 characters."
+params = [{ name = "greeting.length", bound = "min", value = 100 }]
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print a greeting of exactly 60 characters."
+params = [{ name = "greeting.length", bound = "exact", value = 60 }]
+
+[[requirement]]
+id = "EX-0001-004"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print the time beside the greeting."
+params = [{ name = "time.width", bound = "about", value = 8 }]
