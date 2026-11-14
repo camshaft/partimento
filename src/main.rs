@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fs, io};
 
-use partimento::logic::{Atom, Condition, Entry, Formula, FormulaSet, Origin};
-use partimento::{config, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree};
+use partimento::logic::FormulaSet;
+use partimento::{config, json, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree};
 
 const USAGE: &str = concat!(
     "usage: partimento check [--root <dir>] [--format text|json] [--final] [--cache <dir>]\n",
@@ -465,112 +465,17 @@ fn json_change(change: &Change) -> String {
 }
 
 /// The formula set as a JSON object of three arrays, each element on a line of its own: its
-/// atoms, its formulas and its conditions.
+/// atoms, its formulas and its conditions. The library's `json` module writes each element, in
+/// the shape of serde's derived `Serialize`, and a formula with a stack on the heap.
 fn formulas_json(set: &FormulaSet) -> String {
-    let atoms: Vec<String> = set.atoms.iter().map(json_atom).collect();
-    let formulas: Vec<String> = set.formulas.iter().map(json_entry).collect();
-    let conditions: Vec<String> = set.conditions.iter().map(json_condition).collect();
+    let atoms: Vec<String> = set.atoms.iter().map(json::atom).collect();
+    let formulas: Vec<String> = set.formulas.iter().map(json::entry).collect();
+    let conditions: Vec<String> = set.conditions.iter().map(json::condition).collect();
     let (atoms, formulas) = (json_list(&atoms), json_list(&formulas));
     let conditions = json_list(&conditions);
     format!(
         "{{\n\"atoms\": {atoms},\n\"formulas\": {formulas},\n\"conditions\": {conditions}\n}}\n"
     )
-}
-
-fn json_atom(atom: &Atom) -> String {
-    let id = json_string(&atom.id);
-    let rfc = match atom.rfc {
-        Some(rfc) => rfc.to_string(),
-        None => "null".to_string(),
-    };
-    let section = json_option(atom.section.as_deref());
-    let level = json_option(atom.level.as_deref());
-    let polarity = json_option(atom.polarity.as_deref());
-    format!(
-        "{{\"id\":{id},\"rfc\":{rfc},\"section\":{section},\"level\":{level},\
-         \"polarity\":{polarity}}}"
-    )
-}
-
-fn json_entry(entry: &Entry) -> String {
-    let formula = json_formula(&entry.formula);
-    let origin = json_origin(&entry.origin);
-    let relation = match &entry.relation {
-        Some(relation) => {
-            let kind = json_string(&relation.kind);
-            let target = json_string(&relation.target);
-            format!("{{\"kind\":{kind},\"target\":{target}}}")
-        }
-        None => "null".to_string(),
-    };
-    format!("{{\"formula\":{formula},\"origin\":{origin},\"relation\":{relation}}}")
-}
-
-fn json_condition(condition: &Condition) -> String {
-    let atom = json_string(&condition.atom);
-    let origin = json_origin(&condition.origin);
-    format!("{{\"atom\":{atom},\"origin\":{origin}}}")
-}
-
-fn json_origin(origin: &Origin) -> String {
-    let requirement = json_string(&origin.requirement);
-    let file = json_string(&origin.file);
-    let line = origin.line;
-    format!("{{\"requirement\":{requirement},\"file\":{file},\"line\":{line}}}")
-}
-
-/// A formula as a JSON object whose one key is its kind: `atom`, `not`, `and`, `or`, `implies`,
-/// `iff` or `exactly_one`. It walks the formula with a stack on the heap, so a deep formula
-/// doesn't grow the call stack.
-fn json_formula(formula: &Formula) -> String {
-    enum Step<'a> {
-        Formula(&'a Formula),
-        Text(&'static str),
-    }
-    let mut output = String::new();
-    let mut stack = vec![Step::Formula(formula)];
-    while let Some(step) = stack.pop() {
-        let formula = match step {
-            Step::Text(text) => {
-                output.push_str(text);
-                continue;
-            }
-            Step::Formula(formula) => formula,
-        };
-        let (key, parts): (&str, Vec<&Formula>) = match formula {
-            Formula::Atom(name) => {
-                let _ = write!(output, "{{\"atom\":{}}}", json_string(name));
-                continue;
-            }
-            Formula::Not(inner) => {
-                output.push_str("{\"not\":");
-                stack.push(Step::Text("}"));
-                stack.push(Step::Formula(inner));
-                continue;
-            }
-            Formula::And(parts) => ("and", parts.iter().collect()),
-            Formula::Or(parts) => ("or", parts.iter().collect()),
-            Formula::Implies(a, b) => ("implies", vec![&**a, &**b]),
-            Formula::Iff(a, b) => ("iff", vec![&**a, &**b]),
-            Formula::ExactlyOne(parts) => ("exactly_one", parts.iter().collect()),
-        };
-        let _ = write!(output, "{{\"{key}\":[");
-        stack.push(Step::Text("]}"));
-        for (index, part) in parts.into_iter().enumerate().rev() {
-            stack.push(Step::Formula(part));
-            if index > 0 {
-                stack.push(Step::Text(","));
-            }
-        }
-    }
-    output
-}
-
-fn json_option(text: Option<&str>) -> String {
-    match text {
-        Some(text) => json_string(text),
-        None => "null".to_string(),
-    }
 }
 
 fn json_string(text: &str) -> String {
@@ -595,6 +500,7 @@ fn json_string(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use partimento::logic::{Entry, Formula, Origin};
 
     /// A formula of 100,000 nested `!` writes as `not` objects around its atom, without
     /// overflowing the stack.
