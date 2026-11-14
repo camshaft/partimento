@@ -473,7 +473,9 @@ impl<'a> Context<'a> {
     }
 
     /// Adds a finding for each requirement required at the first level whose relations lead to
-    /// a requirement forbidden at it.
+    /// a requirement forbidden at it. The walk starts from each forbidden requirement and goes
+    /// back along the relations, so the check reads the relations once for each requirement
+    /// forbidden at the first level, and not once for each one required at it.
     fn polarity(&mut self) {
         let config = self.config;
         let Some(top) = config.levels.first() else {
@@ -483,30 +485,29 @@ impl<'a> Context<'a> {
         let at = |block: &Block, polarity: &str| {
             block.text("level") == Some(top) && block.text("polarity") == Some(polarity)
         };
+        let mut reverse: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for (&from, targets) in &self.leads {
+            for &to in targets {
+                reverse.entry(to).or_default().insert(from);
+            }
+        }
         let mut found = Vec::new();
-        for (index, r) in self.requirements.iter().enumerate() {
-            if self.held.get(r.id) != Some(&index) || !at(r.block, "required") {
+        for (index, forbidden) in self.requirements.iter().enumerate() {
+            if self.held.get(forbidden.id) != Some(&index) || !at(forbidden.block, "forbidden") {
                 continue;
             }
-            let mut reached = BTreeSet::new();
-            let mut stack = vec![r.id];
-            while let Some(node) = stack.pop() {
-                for &next in self.leads.get(node).into_iter().flatten() {
-                    if reached.insert(next) {
-                        stack.push(next);
-                    }
-                }
-            }
-            for id in reached {
-                let Some(&other) = self.held.get(id) else {
+            let id = forbidden.id;
+            for node in leading_to(&reverse, id) {
+                let Some(&other) = self.held.get(node) else {
                     continue;
                 };
-                if at(self.requirements[other].block, "forbidden") {
+                let r = self.requirements[other];
+                if at(r.block, "required") {
                     let message = format!(
                         "the requirement is required at {top}, and its relations lead to `{id}`, \
                          which is forbidden at {top}"
                     );
-                    found.push((*r, message));
+                    found.push((r, message));
                 }
             }
         }
@@ -772,6 +773,24 @@ fn components<'a>(edges: &BTreeMap<&'a str, BTreeSet<&'a str>>) -> Vec<Vec<&'a s
         found.push(component);
     }
     found
+}
+
+/// The nodes whose edges lead to `start`, through one edge or more, read from the graph's edges
+/// reversed: `reverse` holds each target with the nodes whose edges lead to it.
+fn leading_to<'a>(
+    reverse: &BTreeMap<&'a str, BTreeSet<&'a str>>,
+    start: &'a str,
+) -> BTreeSet<&'a str> {
+    let mut reached = BTreeSet::new();
+    let mut stack = vec![start];
+    while let Some(node) = stack.pop() {
+        for &previous in reverse.get(node).into_iter().flatten() {
+            if reached.insert(previous) {
+                stack.push(previous);
+            }
+        }
+    }
+    reached
 }
 
 fn origin(r: Requirement<'_>, line: u32) -> Origin {

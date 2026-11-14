@@ -267,6 +267,93 @@ fn drift_is_checked_where_the_format_rules_pass_and_a_check_fails() {
     }
 }
 
+/// The path of the section file that [`a_polarity_conflict_is_found_once_for_each_pair`] adds
+/// beside the polarity fixture's.
+const STREAMS_PATH: &str = "rfcs/0001-greetings/02-streams.toml";
+
+/// A section file whose requirement EX-0001-004, at line 8, is forbidden at MUST and leads to
+/// EX-0001-001; whose EX-0001-005 and EX-0001-006, at lines 15 and 22, are required at MUST and
+/// lead to each other, and through EX-0001-006 to EX-0001-004 and EX-0001-008; whose
+/// EX-0001-007 is required at SHOULD and leads to EX-0001-004; and whose EX-0001-008 is
+/// forbidden at SHOULD.
+const STREAMS: &str = r#"[section]
+anchor = "streams"
+title = "Streams"
+problem = "A person who reads the program's output can't tell its streams apart."
+motivation = "Each stream carries one kind of line."
+
+[[requirement]]
+id = "EX-0001-004"
+level = "MUST"
+polarity = "forbidden"
+statement = "The program MUST NOT print a log line to the output stream."
+relations = [{ kind = "depends_on", target = "EX-0001-001" }]
+
+[[requirement]]
+id = "EX-0001-005"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print each log line to the log file."
+relations = [{ kind = "depends_on", target = "EX-0001-006" }]
+
+[[requirement]]
+id = "EX-0001-006"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST open the log file when it starts."
+relations = [
+  { kind = "depends_on", target = "EX-0001-005" },
+  { kind = "depends_on", target = "EX-0001-004" },
+  { kind = "depends_on", target = "EX-0001-008" },
+]
+
+[[requirement]]
+id = "EX-0001-007"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD print the time on each log line."
+relations = [{ kind = "depends_on", target = "EX-0001-004" }]
+
+[[requirement]]
+id = "EX-0001-008"
+level = "SHOULD"
+polarity = "forbidden"
+statement = "The program SHOULD NOT print a blank log line."
+"#;
+
+#[test]
+fn a_polarity_conflict_is_found_once_for_each_pair() {
+    let mut tree = tree(named("21-polarity-conflict"));
+    let path = STREAMS_PATH.to_string();
+    tree.files.insert(path, ByteVec::from(STREAMS.to_string()));
+    let tree = with_render(tree);
+    // EX-0001-005 and EX-0001-006 lead to EX-0001-004, and through it, EX-0001-001 and
+    // EX-0001-002 to the fixture's EX-0001-003, though their own relations form a cycle. The
+    // relation from EX-0001-004 starts at a forbidden requirement, EX-0001-007 is required at
+    // SHOULD and EX-0001-008 is forbidden at SHOULD, so none of them adds a finding.
+    let rule = "error[polarity-conflict]";
+    let lead = |file: &str, line: u32, id: &str, to: &str| {
+        format!(
+            "{rule} {file}:{line}: {id}: the requirement is required at MUST, and its relations \
+             lead to `{to}`, which is forbidden at MUST\n"
+        )
+    };
+    let expected = [
+        lead(GREETING, 8, "EX-0001-001", "EX-0001-003"),
+        lead(GREETING, 15, "EX-0001-002", "EX-0001-003"),
+        lead(STREAMS_PATH, 15, "EX-0001-005", "EX-0001-003"),
+        lead(STREAMS_PATH, 15, "EX-0001-005", "EX-0001-004"),
+        lead(STREAMS_PATH, 22, "EX-0001-006", "EX-0001-003"),
+        lead(STREAMS_PATH, 22, "EX-0001-006", "EX-0001-004"),
+    ]
+    .concat();
+    for (backend, check) in backends() {
+        let report = check(&tree, &Options::default());
+        assert_eq!(lines(&report), expected, "{backend}");
+        assert!(report.failed(), "{backend}");
+    }
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};
