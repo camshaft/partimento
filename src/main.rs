@@ -590,3 +590,41 @@ fn json_string(text: &str) -> String {
     output.push('"');
     output
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A formula of 100,000 nested `!` writes as `not` objects around its atom, without
+    /// overflowing the stack.
+    #[test]
+    fn formulas_json_writes_a_deep_formula() {
+        const DEPTH: usize = 100_000;
+        let mut formula = Formula::atom("EX-0001-001");
+        for _ in 0..DEPTH {
+            formula = formula.not();
+        }
+        let set = FormulaSet {
+            atoms: Vec::new(),
+            formulas: vec![Entry {
+                formula,
+                origin: Origin {
+                    requirement: "EX-0001-001".to_owned(),
+                    file: "rfcs/1-example/01-example.toml".to_owned(),
+                    line: 1,
+                },
+                relation: None,
+            }],
+            conditions: Vec::new(),
+        };
+        let opens = "{\"not\":".repeat(DEPTH);
+        let closes = "}".repeat(DEPTH);
+        let expected = format!(
+            "{{\n\"atoms\": [],\n\"formulas\": [\n{{\"formula\":{opens}{{\"atom\":\"EX-0001-001\"}}\
+             {closes},\"origin\":{{\"requirement\":\"EX-0001-001\",\
+             \"file\":\"rfcs/1-example/01-example.toml\",\"line\":1}},\"relation\":null}}\n],\n\
+             \"conditions\": []\n}}\n"
+        );
+        assert_eq!(formulas_json(&set), expected);
+    }
+}
