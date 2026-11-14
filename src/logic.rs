@@ -4,16 +4,22 @@
 //! Each requirement identifier is a propositional atom. The checker turns each formula of the set
 //! into clauses by the Tseitin transform, and gives each formula a selector literal, so that the
 //! formula holds only where its selector is assumed true.
+//!
+//! The parser and each walk of a formula, its clone, drop, display and encoding, keep their own
+//! stack on the heap, so a formula may nest as deep as memory allows. The derived comparison,
+//! debug output and serialization of a formula still recurse once for each level.
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::mem;
+use std::vec::Drain;
 
 use serde::Serialize;
 
 use crate::solver::{Answer, Backend, Lit};
 
 /// A formula over requirement identifiers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Formula {
     /// A requirement identifier, or a condition's atom.
@@ -60,29 +66,162 @@ impl Formula {
         }
         Formula::And(all)
     }
+
+    /// Folds the formula from its atoms up: `visit` is called on each formula after its parts,
+    /// with the values it returned for them, in order. The formulas still to visit wait on a
+    /// stack on the heap, so a formula may nest as deep as memory allows.
+    fn fold<'f, T>(&'f self, mut visit: impl FnMut(&'f Formula, Drain<'_, T>) -> T) -> T {
+        enum Step<'s> {
+            Enter(&'s Formula),
+            Fold(&'s Formula),
+        }
+
+        let mut steps = vec![Step::Enter(self)];
+        let mut values: Vec<T> = Vec::new();
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Enter(formula) => {
+                    steps.push(Step::Fold(formula));
+                    match formula {
+                        Formula::Atom(_) => {}
+                        Formula::Not(inner) => steps.push(Step::Enter(inner)),
+                        Formula::And(parts) | Formula::Or(parts) => {
+                            steps.extend(parts.iter().rev().map(Step::Enter));
+                        }
+                        Formula::Implies(a, b) | Formula::Iff(a, b) => {
+                            steps.push(Step::Enter(b));
+                            steps.push(Step::Enter(a));
+                        }
+                    }
+                }
+                Step::Fold(formula) => {
+                    let count = match formula {
+                        Formula::Atom(_) => 0,
+                        Formula::Not(_) => 1,
+                        Formula::And(parts) | Formula::Or(parts) => parts.len(),
+                        Formula::Implies(..) | Formula::Iff(..) => 2,
+                    };
+                    let value = visit(formula, values.drain(values.len() - count..));
+                    values.push(value);
+                }
+            }
+        }
+        values.pop().expect("the fold leaves the formula's value")
+    }
+
+    /// Moves each part of the formula that isn't an atom onto `pending`, and leaves an empty
+    /// atom in its place, so that dropping the formula doesn't recurse.
+    fn take_parts(&mut self, pending: &mut Vec<Formula>) {
+        fn take(part: &mut Formula, pending: &mut Vec<Formula>) {
+            if !matches!(part, Formula::Atom(_)) {
+                pending.push(mem::replace(part, Formula::Atom(String::new())));
+            }
+        }
+
+        match self {
+            Formula::Atom(_) => {}
+            Formula::Not(inner) => take(inner, pending),
+            Formula::And(parts) | Formula::Or(parts) => {
+                for part in parts {
+                    take(part, pending);
+                }
+            }
+            Formula::Implies(a, b) | Formula::Iff(a, b) => {
+                take(a, pending);
+                take(b, pending);
+            }
+        }
+    }
+}
+
+impl Clone for Formula {
+    fn clone(&self) -> Self {
+        self.fold(|formula, mut parts: Drain<'_, Formula>| match formula {
+            Formula::Atom(name) => Formula::Atom(name.clone()),
+            Formula::Not(_) => next_part(&mut parts).not(),
+            Formula::And(_) => Formula::And(parts.collect()),
+            Formula::Or(_) => Formula::Or(parts.collect()),
+            Formula::Implies(..) => next_part(&mut parts).implies(next_part(&mut parts)),
+            Formula::Iff(..) => next_part(&mut parts).iff(next_part(&mut parts)),
+        })
+    }
+}
+
+impl Drop for Formula {
+    fn drop(&mut self) {
+        // Each formula moves its parts that aren't atoms here before it drops, so no drop
+        // recurses past the parts of one formula.
+        let mut pending = Vec::new();
+        self.take_parts(&mut pending);
+        while let Some(mut formula) = pending.pop() {
+            formula.take_parts(&mut pending);
+        }
+    }
+}
+
+/// The next value a fold passes for a formula's parts.
+fn next_part<T>(parts: &mut impl Iterator<Item = T>) -> T {
+    parts.next().expect("a fold passes a value for each part")
 }
 
 impl fmt::Display for Formula {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn join(f: &mut fmt::Formatter<'_>, parts: &[Formula], op: &str) -> fmt::Result {
-            write!(f, "(")?;
-            for (i, part) in parts.iter().enumerate() {
-                if i > 0 {
-                    write!(f, " {op} ")?;
-                }
-                write!(f, "{part}")?;
-            }
-            write!(f, ")")
+        enum Step<'a> {
+            Part(&'a Formula),
+            Text(&'a str),
         }
 
-        match self {
-            Formula::Atom(name) => write!(f, "{name}"),
-            Formula::Not(inner) => write!(f, "!{inner}"),
-            Formula::And(parts) => join(f, parts, "&"),
-            Formula::Or(parts) => join(f, parts, "|"),
-            Formula::Implies(a, b) => write!(f, "({a} -> {b})"),
-            Formula::Iff(a, b) => write!(f, "({a} <-> {b})"),
+        /// Pushes the steps that write `parts`, `op` between each two, and then `)`.
+        fn join<'a>(steps: &mut Vec<Step<'a>>, parts: &'a [Formula], op: &'a str) {
+            steps.push(Step::Text(")"));
+            for (i, part) in parts.iter().enumerate().rev() {
+                steps.push(Step::Part(part));
+                if i > 0 {
+                    steps.push(Step::Text(op));
+                }
+            }
         }
+
+        /// Pushes the steps that write `a`, `op` and `b`, and then `)`.
+        fn pair<'a>(steps: &mut Vec<Step<'a>>, a: &'a Formula, b: &'a Formula, op: &'a str) {
+            steps.extend([
+                Step::Text(")"),
+                Step::Part(b),
+                Step::Text(op),
+                Step::Part(a),
+            ]);
+        }
+
+        // The steps still to write wait on a stack on the heap, the next one last, so a
+        // formula may nest as deep as memory allows.
+        let mut steps = vec![Step::Part(self)];
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Text(text) => f.write_str(text)?,
+                Step::Part(Formula::Atom(name)) => f.write_str(name)?,
+                Step::Part(Formula::Not(inner)) => {
+                    f.write_str("!")?;
+                    steps.push(Step::Part(inner));
+                }
+                Step::Part(Formula::And(parts)) => {
+                    f.write_str("(")?;
+                    join(&mut steps, parts, " & ");
+                }
+                Step::Part(Formula::Or(parts)) => {
+                    f.write_str("(")?;
+                    join(&mut steps, parts, " | ");
+                }
+                Step::Part(Formula::Implies(a, b)) => {
+                    f.write_str("(")?;
+                    pair(&mut steps, a, b, " -> ");
+                }
+                Step::Part(Formula::Iff(a, b)) => {
+                    f.write_str("(")?;
+                    pair(&mut steps, a, b, " <-> ");
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -208,111 +347,176 @@ impl Parser {
         }
     }
 
-    // iff := implies ('<->' implies)*
-    fn iff(&mut self) -> Result<Formula, ParseError> {
-        let mut formula = self.implies()?;
-        while *self.peek() == Token::Iff {
-            self.take();
-            formula = formula.iff(self.implies()?);
-        }
-        Ok(formula)
-    }
-
-    // implies := or ('->' implies)?, so `a -> b -> c` reads as `a -> (b -> c)`
-    fn implies(&mut self) -> Result<Formula, ParseError> {
-        let formula = self.or()?;
-        if *self.peek() == Token::Implies {
-            self.take();
-            return Ok(formula.implies(self.implies()?));
-        }
-        Ok(formula)
-    }
-
-    // or := and ('|' and)*
-    fn or(&mut self) -> Result<Formula, ParseError> {
-        let mut parts = vec![self.and()?];
-        while *self.peek() == Token::Or {
-            self.take();
-            parts.push(self.and()?);
-        }
-        Ok(if parts.len() == 1 {
-            parts.remove(0)
-        } else {
-            Formula::Or(parts)
-        })
-    }
-
-    // and := unary ('&' unary)*
-    fn and(&mut self) -> Result<Formula, ParseError> {
-        let mut parts = vec![self.unary()?];
-        while *self.peek() == Token::And {
-            self.take();
-            parts.push(self.unary()?);
-        }
-        Ok(if parts.len() == 1 {
-            parts.remove(0)
-        } else {
-            Formula::And(parts)
-        })
-    }
-
-    // unary := '!' unary | primary
-    fn unary(&mut self) -> Result<Formula, ParseError> {
-        if *self.peek() == Token::Not {
-            self.take();
-            return Ok(self.unary()?.not());
-        }
-        self.primary()
-    }
-
-    // primary := identifier | function '(' iff (',' iff)* ')' | '(' iff ')'
-    fn primary(&mut self) -> Result<Formula, ParseError> {
-        let offset = self.offset();
-        match self.take() {
-            Token::Open => {
-                let formula = self.iff()?;
-                self.expect(Token::Close, "`)`")?;
-                Ok(formula)
-            }
-            Token::Ident(name) if *self.peek() == Token::Open => {
-                self.take();
-                let mut parts = vec![self.iff()?];
-                while *self.peek() == Token::Comma {
+    /// Reads the formula of the text, to its end. It keeps a run of `!` as a count, and each
+    /// group around the one being read, a parenthesis or a function's arguments, on a stack on
+    /// the heap, so a formula may nest as deep as memory allows.
+    fn formula(&mut self) -> Result<Formula, ParseError> {
+        let mut group = Group::Text;
+        let mut pending = Pending::default();
+        let mut outer = Vec::new();
+        loop {
+            // An operand: after a run of `!`, an identifier, or the start of a call or of a
+            // parenthesis, whose formula is the operand once its group ends.
+            let mut operand = loop {
+                let offset = self.offset();
+                match self.take() {
+                    Token::Not => pending.nots += 1,
+                    Token::Open => {
+                        outer.push((group, mem::take(&mut pending)));
+                        group = Group::Parens;
+                    }
+                    Token::Ident(name) if *self.peek() == Token::Open => {
+                        self.take();
+                        outer.push((group, mem::take(&mut pending)));
+                        group = Group::Call(name, offset, Vec::new());
+                    }
+                    Token::Ident(name) => break Formula::Atom(name),
+                    _ => {
+                        return Err(ParseError {
+                            offset,
+                            message: "expected an identifier, `!` or `(`".to_owned(),
+                        });
+                    }
+                }
+            };
+            // Then a binary operator, or the end of the operand's group, whose formula is an
+            // operand of the group around it.
+            loop {
+                pending.operand(operand);
+                if pending.operator(self.peek()) {
                     self.take();
-                    parts.push(self.iff()?);
+                    break;
                 }
-                self.expect(Token::Close, "`,` or `)`")?;
-                match name.as_str() {
-                    "at_least_one" => Ok(Formula::at_least_one(parts)),
-                    "exactly_one" => Ok(Formula::exactly_one(parts)),
-                    _ => Err(ParseError {
-                        offset,
-                        message: format!("`{name}` isn't at_least_one or exactly_one"),
-                    }),
+                operand = mem::take(&mut pending).end();
+                match group {
+                    Group::Text if *self.peek() == Token::End => return Ok(operand),
+                    Group::Text => return self.error("expected an operator or the formula's end"),
+                    Group::Parens => self.expect(Token::Close, "`)`")?,
+                    Group::Call(name, offset, mut args) => {
+                        args.push(operand);
+                        if *self.peek() == Token::Comma {
+                            self.take();
+                            group = Group::Call(name, offset, args);
+                            break;
+                        }
+                        self.expect(Token::Close, "`,` or `)`")?;
+                        operand = call(&name, offset, args)?;
+                    }
                 }
+                (group, pending) = outer.pop().expect("only the text has no outer group");
             }
-            Token::Ident(name) => Ok(Formula::Atom(name)),
-            _ => Err(ParseError {
-                offset,
-                message: "expected an identifier, `!` or `(`".to_owned(),
-            }),
         }
     }
 }
 
+/// A group of a formula's text: the whole text, a formula in parentheses, or the arguments of
+/// a call, with the function's name, the byte where the name starts, and the arguments read
+/// before the one being read.
+enum Group {
+    Text,
+    Parens,
+    Call(String, usize, Vec<Formula>),
+}
+
+/// The operators of a group that wait for the operands after them: the count of `!` before the
+/// next operand, the parts of the conjunction, the disjunction and the chain of implications
+/// being read, each a part of the next, and the equivalence read so far.
+#[derive(Default)]
+struct Pending {
+    nots: usize,
+    and: Vec<Formula>,
+    or: Vec<Formula>,
+    implies: Vec<Formula>,
+    iff: Option<Formula>,
+}
+
+impl Pending {
+    /// Adds `formula`, under the run of `!` before it, to the conjunction being read.
+    fn operand(&mut self, mut formula: Formula) {
+        for _ in 0..mem::take(&mut self.nots) {
+            formula = formula.not();
+        }
+        self.and.push(formula);
+    }
+
+    /// Reads `token` where it is a binary operator, and ends each part that binds tighter than
+    /// it: `&` binds tightest, then `|`, `->` and `<->`. False where it isn't one.
+    fn operator(&mut self, token: &Token) -> bool {
+        match token {
+            Token::And => {}
+            Token::Or => self.end_and(),
+            Token::Implies => self.end_or(),
+            Token::Iff => self.end_implies(),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Ends the conjunction being read, as a part of the disjunction.
+    fn end_and(&mut self) {
+        let parts = mem::take(&mut self.and);
+        self.or.push(one_or_all(parts, Formula::And));
+    }
+
+    /// Ends the disjunction being read, as a part of the chain of implications.
+    fn end_or(&mut self) {
+        self.end_and();
+        let parts = mem::take(&mut self.or);
+        self.implies.push(one_or_all(parts, Formula::Or));
+    }
+
+    /// Ends the chain of implications, which groups to the right, as a side of the equivalence.
+    fn end_implies(&mut self) {
+        self.end_or();
+        let mut formula = self
+            .implies
+            .pop()
+            .expect("a chain of implications has a part");
+        while let Some(left) = self.implies.pop() {
+            formula = left.implies(formula);
+        }
+        self.iff = Some(match self.iff.take() {
+            Some(left) => left.iff(formula),
+            None => formula,
+        });
+    }
+
+    /// The group's formula, once its last operand is read.
+    fn end(mut self) -> Formula {
+        self.end_implies();
+        self.iff.take().expect("a group's formula has a part")
+    }
+}
+
+/// The formula of a call of the function `name`, whose name starts at byte `offset`.
+fn call(name: &str, offset: usize, args: Vec<Formula>) -> Result<Formula, ParseError> {
+    match name {
+        "at_least_one" => Ok(Formula::at_least_one(args)),
+        "exactly_one" => Ok(Formula::exactly_one(args)),
+        _ => Err(ParseError {
+            offset,
+            message: format!("`{name}` isn't at_least_one or exactly_one"),
+        }),
+    }
+}
+
+/// The one part, or `all` of the parts.
+fn one_or_all(mut parts: Vec<Formula>, all: fn(Vec<Formula>) -> Formula) -> Formula {
+    if parts.len() == 1 {
+        return parts.pop().expect("one part");
+    }
+    all(parts)
+}
+
 /// Reads a `logic` formula: identifiers, `!`, `&`, `|`, `->`, `<->`, parentheses,
 /// `at_least_one(...)` and `exactly_one(...)`. `!` binds tightest, then `&`, `|`, `->`, which
-/// groups to the right, and `<->`.
+/// groups to the right, and `<->`. A formula may nest as deep as memory allows.
 pub fn parse(text: &str) -> Result<Formula, ParseError> {
     let mut parser = Parser {
         tokens: lex(text)?,
         next: 0,
     };
-    let formula = parser.iff()?;
-    if *parser.peek() != Token::End {
-        return parser.error("expected an operator or the formula's end");
-    }
-    Ok(formula)
+    parser.formula()
 }
 
 /// Where a formula or a condition comes from: the requirement, and the file and line that state
@@ -414,47 +618,46 @@ impl<B: Backend> Encoding<B> {
         truth
     }
 
-    /// A literal equivalent to `formula`, with the clauses that define it.
+    /// A literal equivalent to `formula`, with the clauses that define it, which a fold of the
+    /// formula adds from its atoms up.
     fn encode(&mut self, formula: &Formula) -> Lit {
-        match formula {
+        formula.fold(|formula, mut lits: Drain<'_, Lit>| match formula {
             Formula::Atom(name) => self.atom(name),
-            Formula::Not(inner) => !self.encode(inner),
+            Formula::Not(_) => !next_part(&mut lits),
             Formula::And(parts) if parts.is_empty() => self.constant(true),
             Formula::Or(parts) if parts.is_empty() => self.constant(false),
-            Formula::And(parts) => {
-                let lits: Vec<Lit> = parts.iter().map(|part| self.encode(part)).collect();
+            Formula::And(_) => {
                 let x = self.backend.new_var();
                 let mut any_false = vec![x];
-                for &lit in &lits {
+                for lit in lits {
                     self.backend.add_clause(&[!x, lit]);
                     any_false.push(!lit);
                 }
                 self.backend.add_clause(&any_false);
                 x
             }
-            Formula::Or(parts) => {
-                let lits: Vec<Lit> = parts.iter().map(|part| self.encode(part)).collect();
+            Formula::Or(_) => {
                 let x = self.backend.new_var();
                 let mut any_true = vec![!x];
-                for &lit in &lits {
+                for lit in lits {
                     self.backend.add_clause(&[x, !lit]);
                     any_true.push(lit);
                 }
                 self.backend.add_clause(&any_true);
                 x
             }
-            Formula::Implies(a, b) => {
-                let a = self.encode(a);
-                let b = self.encode(b);
+            Formula::Implies(..) => {
+                let a = next_part(&mut lits);
+                let b = next_part(&mut lits);
                 let x = self.backend.new_var();
                 self.backend.add_clause(&[!x, !a, b]);
                 self.backend.add_clause(&[x, a]);
                 self.backend.add_clause(&[x, !b]);
                 x
             }
-            Formula::Iff(a, b) => {
-                let a = self.encode(a);
-                let b = self.encode(b);
+            Formula::Iff(..) => {
+                let a = next_part(&mut lits);
+                let b = next_part(&mut lits);
                 let x = self.backend.new_var();
                 self.backend.add_clause(&[!x, !a, b]);
                 self.backend.add_clause(&[!x, a, !b]);
@@ -462,7 +665,7 @@ impl<B: Backend> Encoding<B> {
                 self.backend.add_clause(&[x, !a, !b]);
                 x
             }
-        }
+        })
     }
 }
 
@@ -625,9 +828,60 @@ mod tests {
         assert!(matches!(or, Answer::Unsat { .. }));
     }
 
+    /// The nesting of the deep formulas' tests.
+    const DEPTH: usize = 100_000;
+
+    /// A formula of `DEPTH` nested `!` reads, prints, clones, drops and encodes without
+    /// overflowing the stack.
+    fn deep_negation<B: Backend + Default>() {
+        let text = format!("{}A", "!".repeat(DEPTH));
+        let formula = parse(&text).unwrap();
+        let mut inner = &formula;
+        let mut nots = 0;
+        while let Formula::Not(part) = inner {
+            inner = part;
+            nots += 1;
+        }
+        assert_eq!(nots, DEPTH);
+        assert_eq!(*inner, a("A"));
+        assert_eq!(formula.to_string(), text);
+        assert_eq!(formula.clone().to_string(), text);
+        let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+        assert!(sat(&mut encoding, &[("A", true)]));
+        assert!(!sat(&mut encoding, &[("A", false)]));
+    }
+
+    /// A formula of `DEPTH` nested parentheses reads, prints, clones, drops and encodes
+    /// without overflowing the stack, and so do bare and unclosed parentheses.
+    fn deep_parentheses<B: Backend + Default>() {
+        let text = format!("{}A{}", "(A & ".repeat(DEPTH), ")".repeat(DEPTH));
+        let formula = parse(&text).unwrap();
+        let mut inner = &formula;
+        let mut ands = 0;
+        while let Formula::And(parts) = inner {
+            assert_eq!(parts.len(), 2);
+            assert_eq!(parts[0], a("A"));
+            inner = &parts[1];
+            ands += 1;
+        }
+        assert_eq!(ands, DEPTH);
+        assert_eq!(*inner, a("A"));
+        assert_eq!(formula.to_string(), text);
+        assert_eq!(formula.clone().to_string(), text);
+        let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+        assert!(sat(&mut encoding, &[("A", true)]));
+        assert!(!sat(&mut encoding, &[("A", false)]));
+        let bare = format!("{}A{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
+        assert_eq!(parse(&bare).unwrap(), a("A"));
+        let unclosed = format!("{}A", "(".repeat(DEPTH));
+        assert_eq!(parse(&unclosed).unwrap_err().offset, DEPTH + 1);
+    }
+
     crate::solver::backend_tests!(
         encoding_agrees_with_truth_tables,
         selectors_switch_formulas,
         empty_compositions,
+        deep_negation,
+        deep_parentheses,
     );
 }
