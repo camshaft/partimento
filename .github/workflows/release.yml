@@ -8,9 +8,10 @@ name: release
 #     so no other push to main publishes anything.
 #
 # The static Linux programs for x86_64 and aarch64, and their SHA-256 sums, attach to that release:
-#   - `plan` reads Cargo.toml's version, and asks for the programs where the tag v<version> doesn't
-#     exist yet and this push is the merge of the release pull request, the one push that can
-#     create the tag, or where the tag's release lacks an archive or its sum.
+#   - `plan` reads Cargo.toml's version, and asks for the release and the programs where the tag
+#     v<version> doesn't exist yet and this push is the merge of the release pull request, the one
+#     push that can create the tag, or for the programs alone where the tag's release lacks an
+#     archive or its sum.
 #   - `binaries` builds them with the read-only token from the commit the tag is on or goes on:
 #     release-plz tags the release pull request's last commit where the pull request merged with a
 #     merge commit, and the pushed commit otherwise.
@@ -21,8 +22,10 @@ name: release
 #
 # crates.io Trusted Publishing through GitHub OIDC (rust-lang/crates-io-auth-action): no
 # CARGO_REGISTRY_TOKEN and no personal token. The publisher is registered on crates.io for the
-# repository camshaft/partimento and the workflow release.yml. Until it is, the auth step fails
-# and the `release` job stops before it publishes anything.
+# repository camshaft/partimento and the workflow release.yml. `release` runs the auth step only
+# where `plan` asks for the release, so a push to main that releases nothing doesn't ask crates.io
+# for a token. Until the publisher is registered, the auth step fails on the release pull
+# request's merge, and the `release` job stops before it publishes anything.
 
 on:
   push:
@@ -63,10 +66,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Read Cargo.toml's version, and decide whether this run builds the programs and from which
-  # commit: the commit release-plz tags where the tag v<version> doesn't exist yet and this push is
-  # the merge of the release pull request, or the tag's commit where its release lacks an archive or
-  # its sum.
+  # Read Cargo.toml's version, and decide whether release-plz has a release to make, and whether
+  # this run builds the programs and from which commit: a release and the commit release-plz tags
+  # where the tag v<version> doesn't exist yet and this push is the merge of the release pull
+  # request, or no release and the tag's commit where its release lacks an archive or its sum.
   plan:
     name: plan the programs
     runs-on: ubuntu-latest
@@ -77,6 +80,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       commit: ${{ steps.plan.outputs.commit }}
       build: ${{ steps.plan.outputs.build }}
+      release: ${{ steps.plan.outputs.release }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,18 +110,21 @@ jobs:
               -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
               "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls?per_page=100" || true)"
             if [ "$code" != 200 ]; then
-              # Build where the pull requests can't be read, so a release doesn't go without its
-              # programs.
-              echo "::warning::Reading the pull requests of $GITHUB_SHA answered HTTP $code, so this run builds the programs."
+              # Build and release where the pull requests can't be read, so a release doesn't go
+              # without its programs or its publish.
+              echo "::warning::Reading the pull requests of $GITHUB_SHA answered HTTP $code, so this run builds the programs and runs the release."
               build=true
+              release=true
             else
               # jq exits 0 where one of them is the release pull request, 1 where none is, and
-              # above 1 where it can't read the answer, which builds as a failed read does.
+              # above 1 where it can't read the answer, which builds and releases as a failed read
+              # does.
               match=0
               jq -e --arg prefix "$prefix" 'any(.[]; (.head.ref // "") | startswith($prefix))' pulls.json > /dev/null || match=$?
               case "$match" in
                 0)
                   build=true
+                  release=true
                   # release-plz tags the release pull request's last commit instead of this one
                   # where the two differ and the last commit is in this one's history, as after a
                   # merge with a merge commit (`should_release` in release-plz's command/release.rs).
@@ -138,21 +145,26 @@ jobs:
                   fi
                   ;;
                 1)
-                  echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs."
+                  echo "There is no tag $tag yet, and this push isn't the release pull request's merge, so it can't create the tag: this run doesn't build the programs or run the release."
                   build=false
+                  release=false
                   ;;
                 *)
-                  echo "::warning::jq couldn't read the pull requests of $GITHUB_SHA (exit status $match), so this run builds the programs."
+                  echo "::warning::jq couldn't read the pull requests of $GITHUB_SHA (exit status $match), so this run builds the programs and runs the release."
                   build=true
+                  release=true
                   ;;
               esac
             fi
             echo "commit=$commit" >> "$GITHUB_OUTPUT"
             echo "build=$build" >> "$GITHUB_OUTPUT"
+            echo "release=$release" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The tag exists: build from its commit where its release lacks an archive or its sum.
+          # The tag exists, so release-plz released this version already and has nothing to
+          # release: build from the tag's commit where its release lacks an archive or its sum.
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "release=false" >> "$GITHUB_OUTPUT"
           code="$(curl -sS -o release.json -w '%{http_code}' \
             -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
@@ -220,12 +232,15 @@ jobs:
           if-no-files-found: error
 
   # After the release pull request merges: publish the crate through OIDC, push the tag and create
-  # the GitHub release, then attach the programs `binaries` built. It waits for `binaries` and
-  # doesn't run after a failed build, so a version doesn't publish while its programs fail to build.
+  # the GitHub release, then attach the programs `binaries` built. The crates.io auth and
+  # release-plz's release run only where `plan` asks for the release, and the job runs only where
+  # `plan` asks for the release or the programs, so a push to main without either passes. It waits
+  # for `binaries` and doesn't run after a failed build, so a version doesn't publish while its
+  # programs fail to build.
   release:
     name: release-plz release (publish + tag)
     needs: [plan, binaries]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') && (needs.plan.outputs.release == 'true' || needs.plan.outputs.build == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the tag, create the GitHub release and attach the programs to it
@@ -238,11 +253,14 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup override set stable
-      # Trade the GitHub OIDC id-token for a short-lived crates.io token.
+      # Trade the GitHub OIDC id-token for a short-lived crates.io token where `plan` asks for the
+      # release.
       - name: crates.io auth (OIDC Trusted Publishing)
+        if: ${{ needs.plan.outputs.release == 'true' }}
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - name: release-plz release
+        if: ${{ needs.plan.outputs.release == 'true' }}
         uses: release-plz/action@v0.5
         with:
           command: release
