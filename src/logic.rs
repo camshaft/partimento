@@ -533,6 +533,15 @@ pub struct Origin {
 pub struct Entry {
     pub formula: Formula,
     pub origin: Origin,
+    /// The relation that states the formula, where a relation does.
+    pub relation: Option<Relation>,
+}
+
+/// A relation that states a formula: its kind, such as `depends_on`, and its target.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Relation {
+    pub kind: String,
+    pub target: String,
 }
 
 /// A condition's atom, which check 2 assumes true with the rest of the set.
@@ -542,9 +551,26 @@ pub struct Condition {
     pub origin: Origin,
 }
 
+/// An atom of the formula set: a requirement identifier, with what the set states of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Atom {
+    pub id: String,
+    /// The RFC whose directory holds the requirement, or else the RFC the identifier's form
+    /// names.
+    pub rfc: Option<u32>,
+    /// The path of the section file that holds the requirement, where the set holds it.
+    pub section: Option<String>,
+    /// The requirement's level, such as `MUST`.
+    pub level: Option<String>,
+    /// The requirement's polarity, `required` or `forbidden`.
+    pub polarity: Option<String>,
+}
+
 /// The formula set of a specification.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct FormulaSet {
+    /// Each atom of the formulas and the conditions, in the order of its identifier.
+    pub atoms: Vec<Atom>,
     pub formulas: Vec<Entry>,
     pub conditions: Vec<Condition>,
 }
@@ -748,6 +774,7 @@ mod tests {
 
     fn set(formulas: &[&str]) -> FormulaSet {
         FormulaSet {
+            atoms: Vec::new(),
             formulas: formulas
                 .iter()
                 .enumerate()
@@ -758,6 +785,7 @@ mod tests {
                         file: "rfcs/1-example/01-example.toml".to_owned(),
                         line: i as u32 + 1,
                     },
+                    relation: None,
                 })
                 .collect(),
             conditions: Vec::new(),
@@ -819,6 +847,7 @@ mod tests {
                     file: "rfcs/1-example/01-example.toml".to_owned(),
                     line: 1,
                 },
+                relation: None,
             });
         }
         let mut encoding = Encoding::new(B::default(), &empty);

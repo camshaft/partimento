@@ -27,3 +27,9 @@ varisat = { version = "0.2.2", optional = true }
 name = "partimento"
 path = "src/main.rs"
 required-features = ["cli"]
+
+# Prints the time a check of 2,500 generated requirements takes, in each CI run's log.
+[[test]]
+name = "timing"
+path = "tests/timing.rs"
+harness = false

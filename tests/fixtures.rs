@@ -327,7 +327,10 @@ fn a_set_whose_format_rules_fail_doesnt_render() {
             Ok(_) => assert!(!format_fails(fixture), "{}", fixture.name),
             Err(findings) => {
                 assert!(format_fails(fixture), "{}", fixture.name);
-                let report = Report { findings };
+                let report = Report {
+                    findings,
+                    ..Report::default()
+                };
                 assert_eq!(lines(&report), fixture.expected, "{}", fixture.name);
                 names.push(fixture.name);
             }
