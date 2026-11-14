@@ -1,0 +1,32 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting, a banner or a notice when it starts."
+compose = "any_of"
+parts = ["EX-0001-002", "EX-0001-003", "EX-0001-004"]
+logic = ["exactly_one(EX-0001-002, EX-0001-003, !EX-0001-004)"]
+
+[[requirement]]
+id = "EX-0001-002"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD print a greeting when it starts."
+
+[[requirement]]
+id = "EX-0001-003"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print a banner when it starts."
+
+[[requirement]]
+id = "EX-0001-004"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD print a notice when it starts."
