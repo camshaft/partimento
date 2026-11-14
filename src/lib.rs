@@ -10,6 +10,7 @@ use std::fmt;
 pub use etude_bytevec::ByteVec;
 use serde::Serialize;
 
+mod artifact;
 pub mod config;
 mod diff;
 pub mod model;
@@ -179,12 +180,10 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     options: &Options,
     cache: &C,
 ) -> Report {
-    // The artifacts that a cache keeps come with the solver backends.
-    let _ = cache;
     let mut findings = Vec::new();
     // A set that breaks a format rule doesn't render, so the drift of its generated files is
     // checked only once its format rules pass.
-    if let Some((config, set)) = load(tree, &mut findings) {
+    if let Some((config, set)) = load(tree, cache, &mut findings) {
         if !fails(&findings) {
             let paths = render::Paths::of(&config.paths);
             let generated = render::generate(paths, &render::sections(&set));
@@ -215,7 +214,7 @@ pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
 /// rules, in the order of a report.
 pub fn render(tree: &Tree) -> Result<Tree, Vec<Finding>> {
     let mut findings = Vec::new();
-    match load(tree, &mut findings) {
+    match load(tree, &NoCache, &mut findings) {
         Some((config, set)) if !fails(&findings) => {
             let paths = render::Paths::of(&config.paths);
             Ok(render::generate(paths, &render::sections(&set)).tree)
@@ -227,10 +226,15 @@ pub fn render(tree: &Tree) -> Result<Tree, Vec<Finding>> {
     }
 }
 
-/// Reads the configuration and the RFCs, and checks the format rules.
-fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<(config::Config, model::Set)> {
+/// Reads the configuration and the RFCs, each section file through `cache`, and checks the
+/// format rules.
+fn load<C: Cache>(
+    tree: &Tree,
+    cache: &C,
+    findings: &mut Vec<Finding>,
+) -> Option<(config::Config, model::Set)> {
     let config = config::load(tree, findings)?;
-    let set = model::load(tree, &config, findings);
+    let set = model::load_cached(tree, &config, cache, findings);
     rules::check(&config, &set, findings);
     Some((config, set))
 }
