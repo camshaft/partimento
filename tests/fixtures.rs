@@ -839,7 +839,24 @@ mod binary {
     fn an_entry_that_is_neither_a_file_nor_a_directory_exits_with_2() {
         use std::os::unix::net::UnixListener;
 
-        let dir = scratch("socket-entry");
+        /// Removes the test's tree when the test ends, a failed run's too.
+        struct RemovedAtEnd(PathBuf);
+
+        impl Drop for RemovedAtEnd {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        // A socket's path holds about 100 bytes at most, and a deep build directory is longer, so
+        // this test's tree is under the system's temporary directory, named for this process.
+        // `create_dir` fails where the name is taken already, a link among them, so the test
+        // doesn't write into a directory another user chose.
+        let name = format!("partimento-socket-entry-{}", std::process::id());
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).expect("the directory is made");
+        let _removed = RemovedAtEnd(dir.clone());
         write_fixture(&dir);
         let _socket = UnixListener::bind(dir.join("rfcs/socket")).expect("the socket is made");
         exits_with_2(&dir, "socket: neither a file nor a directory");
