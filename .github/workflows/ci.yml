@@ -1,0 +1,99 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Every job reads the repository and writes nothing.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: 1
+
+jobs:
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup override set stable
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup override set stable
+
+      - uses: camshaft/rust-cache@v1
+
+      - name: Run cargo clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+  # The tests, the fixtures among them, under each solver backend on Linux.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [batsat, varisat]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+
+      - uses: camshaft/rust-cache@v1
+        with:
+          key: ${{ matrix.backend }}
+
+      - name: Run cargo test
+        run: cargo test --locked --features cli,${{ matrix.backend }} --no-default-features
+
+  # The library with the cli feature off: built for wasm32-unknown-unknown, and its tests,
+  # with the fixtures embedded at compile time, run on wasm32-wasip1 under wasmtime.
+  wasm:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown,wasm32-wasip1
+          rustup override set stable
+
+      - uses: camshaft/rust-cache@v1
+
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+
+      - name: Build the library for wasm32-unknown-unknown
+        run: cargo build --locked --lib --no-default-features --features batsat --target wasm32-unknown-unknown
+
+      - name: Run the library tests on wasm32-wasip1
+        run: cargo test --locked --tests --target wasm32-wasip1 --no-default-features --features batsat
