@@ -153,6 +153,7 @@ required `MUST`, `MUST NOT` for a forbidden one. A requirement may also hold:
 
 ```text
 partimento check [--root <dir>] [--format text|json] [--final] [--cache <dir>]
+                 [--formulas <file>]
 ```
 
 `check` reads the tree at `--root`, the current directory where it is left out, and prints
@@ -177,7 +178,7 @@ the requirement's part. The check runs:
   format rules pass.
 
 It exits with 0 where no finding is an error, 1 where one is, and 2 where the arguments are
-wrong or a file can't be read.
+wrong or a file can't be read or written.
 
 - `--final` makes a relation whose target no requirement holds yet an error, where it is a
   warning otherwise: give it once every RFC the set plans is written.
@@ -186,6 +187,13 @@ wrong or a file can't be read.
 - `--cache <dir>` keeps what the check builds from each section file in `<dir>`, a file for
   each key, and reads it back in later checks. A check returns the same findings with the cache
   and without it.
+- `--formulas <file>` writes the formula set that the consistency checks read to `<file>` as
+  JSON before it prints the findings: an object with the arrays `atoms`, `formulas` and
+  `conditions`. Each atom holds its `id`, `rfc`, `section`, `level` and `polarity`, `null` where
+  its requirement doesn't hold the field. Each formula holds its `formula`, an object whose one
+  key is its kind, `atom`, `not`, `and`, `or`, `implies` or `iff`; its `origin`, the
+  `requirement`, `file` and `line` it comes from; and its `relation`, the `kind` and `target` of
+  the relation it states, or `null`. Each condition holds its `atom` and its `origin`.
 
 ## partimento render
 
@@ -245,7 +253,7 @@ file can't be read.
 
 ```toml
 [dependencies]
-partimento = { version = "0.1", default-features = false, features = ["batsat"] }
+partimento = { version = "0.2", default-features = false, features = ["batsat"] }
 ```
 
 The library reads only the `Tree` it is given: the tree's files, by their paths relative to its
