@@ -233,7 +233,8 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
 /// fails, the base's first, with its file's path after the tree's side, `base:` or `head:`; or,
 /// where both pass and the head removes an entry of the base's registry or changes its
 /// identifies, format or body_length, a finding of each such entry, with its file's path after
-/// `head:`.
+/// `head:`; or, where both pass and the head's registry isn't UTF-8 or doesn't parse, the
+/// findings of its read, with its file's path after `head:`.
 pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
     diff::changes(base, head)
 }

@@ -2,7 +2,8 @@
 //! `paths.registry`: the check of the fixture with its registry, with a registry of comment lines
 //! alone, without the file, with a registry whose entries each break one rule, with a registry
 //! that doesn't parse, and without `paths.registry`; the checks of `paths.registry` in spec.toml;
-//! and the diff of a change that removes or alters an entry, and of one that only adds.
+//! and the diff of a change that removes or alters an entry, of one that only adds, and of a head
+//! whose registry isn't UTF-8 or doesn't parse.
 //!
 //! The library's tests build each tree in memory from files embedded at compile time, so they
 //! read no file and run on wasm32 too.
@@ -284,10 +285,28 @@ which the base holds at line 10
 }
 
 #[test]
-fn a_head_whose_registry_doesnt_parse_isnt_compared() {
-    let head = with_registry("entry = 5\n");
-    let changes = partimento::diff(&fixture(), &head).expect("the check reports the parse");
-    assert!(changes.is_empty(), "{changes:?}");
+fn a_head_whose_registry_doesnt_read_fails_the_diff() {
+    // A registry that doesn't parse, and one that isn't UTF-8, each at line 2: the head doesn't
+    // show that it keeps the base's entries, so the diff fails with the finding of the read, on
+    // the head's side.
+    let cases: [&[u8]; 2] = [
+        b"# A registry.\nentry = 5\n",
+        b"# A registry.\nentry = \xff\n",
+    ];
+    for bytes in cases {
+        let mut head = fixture();
+        head.files
+            .insert(REGISTRY.to_string(), ByteVec::from(bytes.to_vec()));
+        let found = partimento::diff(&fixture(), &head).expect_err("the registry doesn't read");
+        assert_eq!(found.len(), 1, "{bytes:?}: {}", lines(&found));
+        assert_eq!(found[0].rule, "parse", "{bytes:?}");
+        assert_eq!(found[0].file, format!("head:{REGISTRY}"), "{bytes:?}");
+        assert_eq!(found[0].line, 2, "{bytes:?}");
+        let versions = partimento::contract_versions(&fixture(), &head);
+        assert_eq!(lines(&versions.expect_err("it doesn't read")), lines(&found));
+        let both = partimento::diff_with_versions(&fixture(), &head);
+        assert_eq!(lines(&both.expect_err("it doesn't read")), lines(&found));
+    }
 }
 
 #[cfg(feature = "cli")]
@@ -357,6 +376,21 @@ mod binary {
         let output = run(&["diff", base, head]);
         assert_eq!(String::from_utf8_lossy(&output.stdout), HEAD_EXPECTED);
         assert_eq!(output.status.code(), Some(1));
+    }
+
+    #[test]
+    fn the_command_prints_the_read_of_a_head_registry_that_doesnt_parse() {
+        let root = scratch("registry-diff-unread");
+        let (base, head) = (root.join("base"), root.join("head"));
+        write(&base, &fixture());
+        write(&head, &with_registry("# A registry.\nentry = 5\n"));
+        let base = base.to_str().expect("the path is UTF-8");
+        let head = head.to_str().expect("the path is UTF-8");
+        let output = run(&["diff", base, head]);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let at = "error[parse] head:registry/identifiers.toml:2: ";
+        assert!(stdout.starts_with(at), "{stdout}");
+        assert_eq!(output.status.code(), Some(1), "{stdout}");
     }
 
     #[cfg(unix)]
