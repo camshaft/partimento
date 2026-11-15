@@ -1,2 +1,2 @@
-warning[implementation-term] rfcs/0001-greetings/01-greeting.toml:11: EX-0001-001: the statement names `sqlite`, a term of `implementation_terms`
-warning[implementation-term] rfcs/0001-greetings/01-greeting.toml:17: EX-0001-002: the statement names `message queue`, a term of `implementation_terms`
+warning[implementation-term] rfcs/0001-greetings/01-greeting.toml:13: EX-0001-001: the statement names `sqlite`, a term of `implementation_terms`
+warning[implementation-term] rfcs/0001-greetings/01-greeting.toml:21: EX-0001-002: the statement names `message queue`, a term of `implementation_terms`

@@ -5,6 +5,8 @@ problem = "A person who stops the program doesn't know that it stopped."
 motivation = "A farewell tells the person that the program stopped."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"

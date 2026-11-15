@@ -1,1 +1,1 @@
-error[relation-cycle] rfcs/0001-greetings/01-greeting.toml:12: EX-0001-001: `implies` and `refines` relations form a cycle through `EX-0001-001`, `EX-0001-002`
+error[relation-cycle] rfcs/0001-greetings/01-greeting.toml:14: EX-0001-001: `implies` and `refines` relations form a cycle through `EX-0001-001`, `EX-0001-002`
