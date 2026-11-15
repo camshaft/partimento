@@ -315,7 +315,8 @@ impl Cache for DiskCache {
     }
 }
 
-/// Reads spec.toml and each file under the set's directories that spec.toml lists.
+/// Reads spec.toml, each file under the set's directories that spec.toml lists, and the registry
+/// where spec.toml locates one.
 fn read_tree(root: &Path) -> Result<Tree, String> {
     let mut tree = Tree::default();
     let spec = root.join(config::FILE);
@@ -343,7 +344,31 @@ fn read_tree(root: &Path) -> Result<Tree, String> {
         }
         read_dir(root, dir, &mut tree.files)?;
     }
+    if let Some(file) = &paths.registry {
+        read_file(root, file, &mut tree.files)?;
+    }
     Ok(tree)
+}
+
+/// Reads the file at `path`, relative to `root`, where it is there. A symbolic link at any part
+/// of the path stops the read, as in `read_dir`, so that the command reads nothing outside the
+/// tree.
+fn read_file(root: &Path, path: &str, files: &mut BTreeMap<String, ByteVec>) -> Result<(), String> {
+    let mut part = root.to_path_buf();
+    for name in path.split('/') {
+        part.push(name);
+        if is_link(&part) {
+            return Err(link(&part));
+        }
+    }
+    match fs::read(&part) {
+        Ok(bytes) => {
+            files.insert(path.to_string(), ByteVec::from(bytes));
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_error(&part, &error)),
+    }
 }
 
 /// Reads each file under `dir`, a directory relative to `root`, where it is there. It reads only

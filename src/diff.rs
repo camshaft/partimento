@@ -16,7 +16,7 @@ use toml::Value;
 
 use crate::config::{self, Config};
 use crate::model::{self, Block, Set};
-use crate::{rules, Finding, Severity, Tree};
+use crate::{registry, rules, Finding, Severity, Tree};
 
 /// The fields whose difference changes a requirement.
 const COMPARED: &[&str] = &[
@@ -164,15 +164,21 @@ pub(crate) fn changes_and_versions(
     ))
 }
 
-/// Both trees loaded, where both pass the format rules; otherwise each finding that fails, the
-/// base's first, with its file's path after the tree's side, `base:` or `head:`.
-fn load_both(base: &Tree, head: &Tree) -> Result<(Loaded, Loaded), Vec<Finding>> {
+/// Both trees loaded, where both pass the format rules and the head keeps each entry of the
+/// base's registry; otherwise each finding that fails, the base's first, with its file's path
+/// after the tree's side, `base:` or `head:`.
+fn load_both(base_tree: &Tree, head_tree: &Tree) -> Result<(Loaded, Loaded), Vec<Finding>> {
     let mut failing = Vec::new();
-    let base = load("base", base, &mut failing);
-    let head = load("head", head, &mut failing);
-    match (base, head) {
-        (Some(base), Some(head)) => Ok((base, head)),
-        _ => Err(failing),
+    let base = load("base", base_tree, &mut failing);
+    let head = load("head", head_tree, &mut failing);
+    let (Some(base), Some(head)) = (base, head) else {
+        return Err(failing);
+    };
+    let kept = registry::kept((base_tree, &base.config), (head_tree, &head.config));
+    if kept.is_empty() {
+        Ok((base, head))
+    } else {
+        Err(kept)
     }
 }
 

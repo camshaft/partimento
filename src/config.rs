@@ -68,6 +68,9 @@ pub struct Paths {
     pub rendered: String,
     /// The requirement file of each section that the tracing tool reads.
     pub requirements: String,
+    /// The registry of identifier kinds, a file of the tree outside the three directories, where
+    /// the configuration states one.
+    pub registry: Option<String>,
 }
 
 /// A group of RFCs: its name, which an RFC's area holds, and the RFC numbers it holds.
@@ -129,6 +132,8 @@ struct RawPaths {
     rfcs: Spanned<String>,
     rendered: Spanned<String>,
     requirements: Spanned<String>,
+    #[serde(default)]
+    registry: Option<Spanned<String>>,
 }
 
 impl RawGroup {
@@ -250,6 +255,24 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
             }
         }
     }
+    // A registry under one of the directories would be read as a source or a generated file too.
+    if let Some(registry) = &paths.registry {
+        let (value, at) = (registry.get_ref(), line(registry.span()));
+        if !in_tree(value) {
+            let message = format!("`paths.registry` is `{value}`, which isn't a file of the tree");
+            findings.push(Finding::error(RULE, FILE, at, None, message));
+        } else {
+            for (key, path) in &keys {
+                let dir = path.get_ref();
+                if in_tree(dir) && nested(value, dir) {
+                    let message = format!(
+                        "`paths.registry` is `{value}`, which overlaps `paths.{key}`, `{dir}`"
+                    );
+                    findings.push(Finding::error(RULE, FILE, at, None, message));
+                }
+            }
+        }
+    }
 
     let mut groups = Vec::new();
     for system in &raw.systems {
@@ -314,6 +337,7 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
             rfcs: raw.paths.rfcs.into_inner(),
             rendered: raw.paths.rendered.into_inner(),
             requirements: raw.paths.requirements.into_inner(),
+            registry: raw.paths.registry.map(Spanned::into_inner),
         },
         levels: raw.levels.into_inner(),
         systems,
