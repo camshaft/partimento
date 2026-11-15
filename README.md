@@ -179,8 +179,12 @@ the system runs, or `source = "contract"`, read from a parameter of the same nam
 RFC.
 
 The last of two or more levels, such as `MAY`, is permissive: a requirement at that level allows
-something, so the consistency checks don't read a formula from it, its logic, its relations or
-its conditions.
+something, so it adds neither a formula nor a condition to the formula set that the consistency
+checks read, from itself, its composition, its logic, its relations or its conditions. Its fields
+are still checked, and the other checks of the requirements still read it: its `depends_on`,
+`implies` and `refines` relations count in the chains that lead a required requirement to a
+forbidden one, its `implies` and `refines` relations count in cycles, and its parameters' bounds
+count with the others'.
 
 ## partimento check
 
