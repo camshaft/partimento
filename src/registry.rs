@@ -475,7 +475,13 @@ fn check_kind(
         return;
     }
     let mut error = |key: &str, message: String| {
-        findings.push(Finding::error(RULE, file, entry.line_of(key), None, message));
+        findings.push(Finding::error(
+            RULE,
+            file,
+            entry.line_of(key),
+            None,
+            message,
+        ));
     };
     let Some(tables) = named.get(identifies) else {
         let message = format!("identifies is `{identifies}`, which isn't a kind table's name");
