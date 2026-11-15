@@ -40,7 +40,8 @@ pub const POLARITY_CONFLICT: &str = "polarity-conflict";
 pub const COMPOSITION: &str = "composition";
 /// A `logic` formula that doesn't follow the grammar.
 pub const LOGIC: &str = "logic";
-/// A parameter that doesn't hold its fields, or whose bounds contradict each other.
+/// A parameter that doesn't hold its fields, whose type, unit, value or source doesn't fit, or
+/// whose bounds contradict each other.
 pub const PARAMETER: &str = "parameter";
 
 const RELATION_KINDS: &[&str] = &[
@@ -51,6 +52,11 @@ const RELATION_KINDS: &[&str] = &[
     "supersedes",
 ];
 const BOUNDS: &[&str] = &["min", "max", "exact"];
+const TYPES: &[&str] = &["count", "duration", "size", "rate", "fraction"];
+const FIELDS_MESSAGE: &str =
+    "a parameter holds `name`, `bound` (`min`, `max` or `exact`), `type` and `value` or `source`";
+const TYPE_MESSAGE: &str =
+    "a parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`";
 
 /// Adds a finding for each of checks 1 to 5 that the set breaks, solving with a backend of type
 /// `B`, and returns the formula set checks 1 and 2 read, with each of its atoms.
@@ -138,6 +144,12 @@ struct Context<'a> {
     /// The `depends_on`, `implies` and `refines` relations, from requirement to target.
     leads: BTreeMap<&'a str, BTreeSet<&'a str>>,
     bounds: BTreeMap<&'a str, Interval<'a>>,
+    /// The type of each parameter, by its name, with the file and the line that first state it.
+    kinds: BTreeMap<&'a str, (&'a str, &'a str, u32)>,
+    /// The names of the parameters that a contract's RFC states.
+    contract_params: BTreeSet<&'a str>,
+    /// Whether the requirement being built is at the permissive level.
+    permissive: bool,
     set: FormulaSet,
     found: Vec<Finding>,
 }
@@ -155,6 +167,9 @@ impl<'a> Context<'a> {
             cycle: BTreeMap::new(),
             leads: BTreeMap::new(),
             bounds: BTreeMap::new(),
+            kinds: BTreeMap::new(),
+            contract_params: BTreeSet::new(),
+            permissive: false,
             set: FormulaSet::default(),
             found: Vec::new(),
         };
@@ -175,6 +190,14 @@ impl<'a> Context<'a> {
             }
             for section in &rfc.sections {
                 for block in &section.requirements {
+                    if config.is_contract(rfc.number) {
+                        let params = block.field("params").and_then(|f| f.value.as_array());
+                        for item in params.into_iter().flatten() {
+                            if let Some(name) = text(item, "name") {
+                                cx.contract_params.insert(name);
+                            }
+                        }
+                    }
                     let Some(field) = block.field("id") else {
                         continue;
                     };
@@ -199,6 +222,11 @@ impl<'a> Context<'a> {
     /// Adds the requirement's formulas and conditions to the set, and checks its fields.
     fn build(&mut self, r: Requirement<'a>) {
         let block = r.block;
+        // A requirement at the permissive level, the last of two or more, adds no formula and
+        // no condition: its fields are still checked.
+        let levels = &self.config.levels;
+        let last = levels.last().filter(|_| levels.len() > 1);
+        self.permissive = last.is_some_and(|last| block.text("level") == Some(last.as_str()));
         let compose = block.text("compose");
         let compose_line = line_of(block, "compose");
         let parts = strings(block.field("parts"));
@@ -217,9 +245,7 @@ impl<'a> Context<'a> {
             for &condition in &conditions {
                 self.resolve(r, condition, "the condition", line, false);
                 self.boundary(r, condition, "the condition", line);
-                let origin = origin(r, line);
-                let atom = condition.to_owned();
-                self.set.conditions.push(Condition { atom, origin });
+                self.condition(condition, r, line);
             }
             let formula = all(atoms_of(&conditions)).implies(Formula::atom(r.id));
             self.push(formula, r, line);
@@ -255,9 +281,7 @@ impl<'a> Context<'a> {
                 if let [exception] = parts[..] {
                     self.resolve(r, exception, "the exception", parts_line, false);
                     self.boundary(r, exception, "the exception", parts_line);
-                    let origin = origin(r, parts_line);
-                    let atom = exception.to_owned();
-                    self.set.conditions.push(Condition { atom, origin });
+                    self.condition(exception, r, parts_line);
                     let formula = Formula::atom(r.id).iff(Formula::atom(exception).not());
                     self.push(formula, r, compose_line);
                 } else {
@@ -312,16 +336,18 @@ impl<'a> Context<'a> {
             } else {
                 own.implies(other)
             };
-            let origin = origin(r, line);
-            let relation = Some(Relation {
-                kind: kind.to_owned(),
-                target: target.to_owned(),
-            });
-            self.set.formulas.push(Entry {
-                formula,
-                origin,
-                relation,
-            });
+            if !self.permissive {
+                let origin = origin(r, line);
+                let relation = Some(Relation {
+                    kind: kind.to_owned(),
+                    target: target.to_owned(),
+                });
+                self.set.formulas.push(Entry {
+                    formula,
+                    origin,
+                    relation,
+                });
+            }
             if kind == "conflicts_with" {
                 continue;
             }
@@ -357,29 +383,86 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Checks the requirement's parameters against the bounds the set states before them.
+    /// Checks the requirement's parameters: their fields, their type, unit, value or source, and
+    /// their bounds against the bounds the set states before them.
     fn params(&mut self, r: Requirement<'a>) {
         let Some(field) = r.block.field("params") else {
             return;
         };
         let line = field.line;
         for item in field.value.as_array().into_iter().flatten() {
-            let name = text(item, "name");
-            let bound = text(item, "bound").filter(|bound| BOUNDS.contains(bound));
-            let value = item.get("value").and_then(number);
-            let (Some(name), Some(bound), Some(value)) = (name, bound, value) else {
-                let message = "a parameter holds `name`, `bound` (`min`, `max` or \
-                               `exact`) and a number as `value`";
-                self.error(PARAMETER, r, line, message.to_string());
-                continue;
-            };
-            let interval = self.bounds.entry(name).or_default();
-            let found = problem(interval, name, bound, value);
-            let file = r.file;
-            tighten(interval, bound, Bound { value, file, line });
-            if let Some(message) = found {
+            if let Some(message) = self.param(r, item, line) {
                 self.error(PARAMETER, r, line, message);
             }
+        }
+    }
+
+    /// Checks one parameter, and returns the first problem it finds.
+    fn param(&mut self, r: Requirement<'a>, item: &'a Value, line: u32) -> Option<String> {
+        let name = text(item, "name");
+        let bound = text(item, "bound").filter(|bound| BOUNDS.contains(bound));
+        let (Some(name), Some(bound)) = (name, bound) else {
+            return Some(FIELDS_MESSAGE.to_string());
+        };
+        let Some(kind) = text(item, "type").filter(|kind| TYPES.contains(kind)) else {
+            return Some(TYPE_MESSAGE.to_string());
+        };
+        match (unit_of(kind), text(item, "unit")) {
+            (Some(expected), unit) if unit != Some(expected) => {
+                return Some(format!("a `{kind}` parameter's `unit` is `{expected}`"));
+            }
+            (None, Some(_)) => {
+                return Some(format!("a `{kind}` parameter doesn't hold a `unit`"));
+            }
+            _ => {}
+        }
+        let stated = self.kinds.get(name).copied();
+        match stated {
+            Some((first, file, at)) if first != kind => {
+                return Some(format!(
+                    "`{name}` is a `{kind}`, and a `{first}` at {file}:{at}"
+                ));
+            }
+            Some(_) => {}
+            None => {
+                self.kinds.insert(name, (kind, r.file, line));
+            }
+        }
+        let amount = match (item.get("value"), text(item, "source")) {
+            (Some(_), Some(_)) => {
+                return Some(format!(
+                    "`{name}` holds a `value` and a `source`, and not both"
+                ));
+            }
+            (None, None) => return Some(format!("`{name}` holds neither `value` nor `source`")),
+            (None, Some(source)) => return self.source_problem(name, source),
+            (Some(amount), None) => amount,
+        };
+        let Some(value) = number(amount) else {
+            return Some(format!("`{name}`'s `value` is a number"));
+        };
+        if matches!(kind, "count" | "size") && !amount.is_integer() {
+            return Some(format!("a `{kind}` parameter's `value` is a whole number"));
+        }
+        if kind == "fraction" && !(0.0..=1.0).contains(&value) {
+            return Some(format!(
+                "a `fraction`'s `value` is from 0 to 1, and {value} isn't"
+            ));
+        }
+        let interval = self.bounds.entry(name).or_default();
+        let found = problem(interval, name, bound, value);
+        let file = r.file;
+        tighten(interval, bound, Bound { value, file, line });
+        found
+    }
+
+    /// The problem with a parameter's `source`, where it has one.
+    fn source_problem(&self, name: &str, source: &str) -> Option<String> {
+        match source {
+            "deployment" => None,
+            "contract" if self.contract_params.contains(name) => None,
+            "contract" => Some(format!("no contract's RFC holds a parameter `{name}`")),
+            _ => Some("a parameter's `source` is `deployment` or `contract`".to_string()),
         }
     }
 
@@ -459,11 +542,7 @@ impl<'a> Context<'a> {
     /// The system an RFC is of, where it isn't a contract RFC.
     fn system_of(&self, number: u32) -> Option<&'a str> {
         let config = self.config;
-        if config
-            .contracts
-            .as_ref()
-            .is_some_and(|range| range.contains(number))
-        {
+        if config.is_contract(number) {
             return None;
         }
         let system = config
@@ -685,6 +764,9 @@ impl<'a> Context<'a> {
     }
 
     fn push(&mut self, formula: Formula, r: Requirement<'a>, line: u32) {
+        if self.permissive {
+            return;
+        }
         let origin = origin(r, line);
         let relation = None;
         self.set.formulas.push(Entry {
@@ -692,6 +774,16 @@ impl<'a> Context<'a> {
             origin,
             relation,
         });
+    }
+
+    /// Adds a condition of the requirement, unless the requirement is at the permissive level.
+    fn condition(&mut self, atom: &str, r: Requirement<'a>, line: u32) {
+        if self.permissive {
+            return;
+        }
+        let origin = origin(r, line);
+        let atom = atom.to_owned();
+        self.set.conditions.push(Condition { atom, origin });
     }
 
     fn error(&mut self, rule: &str, r: Requirement<'a>, line: u32, message: String) {
@@ -880,6 +972,16 @@ fn strings(field: Option<&Field>) -> Vec<&str> {
 }
 
 /// The string of a table's key.
+/// The unit a parameter of the type states, where one does.
+fn unit_of(kind: &str) -> Option<&'static str> {
+    match kind {
+        "duration" => Some("s"),
+        "size" => Some("B"),
+        "rate" => Some("per_s"),
+        _ => None,
+    }
+}
+
 fn text<'v>(item: &'v Value, key: &str) -> Option<&'v str> {
     item.get(key)?.as_str()
 }

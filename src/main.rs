@@ -10,7 +10,8 @@
 //! requirement, the file and the line it comes from.
 //!
 //! `partimento diff <base> <head> [--format text|json]` prints each requirement added, changed or
-//! retired from the tree at `<base>` to the tree at `<head>` and exits with 0. Where either tree
+//! retired from the tree at `<base>` to the tree at `<head>`, then each contract RFC whose
+//! `contract_version` differs between them, and exits with 0. Where either tree
 //! fails a format rule, it prints that tree's failing findings instead and exits with 1, and it
 //! exits with 2 where the arguments are wrong or a file can't be read.
 //!
@@ -27,7 +28,9 @@ use std::process::ExitCode;
 use std::{fs, io};
 
 use partimento::logic::FormulaSet;
-use partimento::{config, json, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree};
+use partimento::{
+    config, json, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree, VersionChange,
+};
 
 const USAGE: &str = concat!(
     "usage: partimento check [--root <dir>] [--format text|json] [--final] [--cache <dir>]\n",
@@ -90,7 +93,10 @@ fn run(args: &Args) -> Result<ExitCode, String> {
         Command::Diff(base, head) => {
             let (base, head) = (read_tree(base)?, read_tree(head)?);
             match partimento::diff(&base, &head) {
-                Ok(changes) => (changes_output(&changes, args.format), false),
+                Ok(changes) => {
+                    let versions = partimento::contract_versions(&base, &head).unwrap_or_default();
+                    (changes_output(&changes, &versions, args.format), false)
+                }
                 Err(findings) => (findings_output(&findings, args.format), true),
             }
         }
@@ -411,11 +417,19 @@ fn findings_output(findings: &[Finding], format: Format) -> String {
 }
 
 /// The changes as text, one a line, or as a JSON array.
-fn changes_output(changes: &[Change], format: Format) -> String {
+fn changes_output(changes: &[Change], versions: &[VersionChange], format: Format) -> String {
     match format {
-        Format::Text => lines(changes),
-        Format::Json => json_array(changes.iter().map(json_change)),
+        Format::Text => lines(changes) + &lines(versions),
+        Format::Json => {
+            let versions = versions.iter().map(json_version);
+            json_array(changes.iter().map(json_change).chain(versions))
+        }
     }
+}
+
+fn json_version(version: &VersionChange) -> String {
+    let (rfc, base, head) = (version.rfc, version.base, version.head);
+    format!("{{\"kind\":\"version\",\"rfc\":{rfc},\"base\":{base},\"head\":{head}}}")
 }
 
 fn lines(items: &[impl Display]) -> String {

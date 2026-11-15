@@ -71,8 +71,14 @@ first = 1
 last = 99
 
 [contracts]
+name = "contracts"
 first = 100
 last = 199
+
+[foundation]
+name = "foundation"
+first = 900
+last = 999
 ```
 
 - `prefix` starts each requirement identifier, `<prefix>-<rfc>-<n>`, such as `EX-0001-001`:
@@ -83,9 +89,11 @@ last = 199
   such a part by its category.
 - `[paths]` sets the directory of the RFC sources, of the rendered sections and of the
   requirement files.
-- Each `[[system]]` sets a system's name and the range of its RFC numbers, and `[contracts]`
-  the range of the RFCs that hold the contracts between the systems. The check reads them to
-  find a requirement that reaches across the boundary between two systems.
+- Each `[[system]]`, `[contracts]` and `[foundation]` sets a group of RFCs: its name and the
+  range of its RFC numbers, `first` to `last`. `[contracts]` holds the RFCs of the contracts
+  between the systems, and `[foundation]` the RFCs every system builds on. The check reads the
+  groups to find a requirement that reaches across the boundary between two systems, and to
+  check each RFC's area.
 
 ### The RFCs
 
@@ -98,9 +106,10 @@ title = "Greetings"
 area = "core"
 ```
 
-An RFC is written where the set holds its directory, and planned where the index lists it
-and the set doesn't hold a directory of its number. The RFC's directory decides its state, so a
-row that still stores `state` gets a warning.
+An RFC's area names the group whose range holds its number, so RFC 1 above is in the `core`
+system. An RFC is written where the set holds its directory, and planned where the index lists
+it and the set doesn't hold a directory of its number. The RFC's directory decides its state, so
+a row that still stores `state` gets a warning.
 
 Each written RFC has a directory `<nnnn>-<slug>` that holds its `rfc.toml`:
 
@@ -112,7 +121,10 @@ abstract = "How the program greets a person when it starts and when it stops."
 retired = []
 ```
 
-`retired` lists the identifiers the RFC no longer holds, which no requirement uses again.
+`rfc.toml` and the index agree on the RFC's title and area. `retired` lists the identifiers the
+RFC no longer holds, which no requirement uses again. A contract RFC, one whose number is in the
+`[contracts]` range, also holds `contract_version`, a whole number from 1 that its writers raise
+with each change of the contract; an RFC of another group doesn't hold it.
 
 Beside `rfc.toml`, the directory holds one file for each section, `<nn>-<slug>.toml`:
 
@@ -128,28 +140,47 @@ prose = "The program greets the person who starts it."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
+binds_to = "system"
 statement = "The program MUST print \"hello\" when it starts."
+rationale = "The greeting is how the person sees that the program started."
 
 [[requirement]]
 id = "EX-0001-002"
 level = "MUST"
 polarity = "forbidden"
+binds_to = "system"
 statement = "The program MUST NOT print the greeting to the error stream."
+rationale = "A person who reads the error stream reads only the errors."
 ```
 
 A section needs `anchor`, `title`, `problem` and `motivation`, and may hold `prose`. The anchor
 holds ASCII letters, digits, `-` and `_`, and the title is one line.
 
-A requirement needs `id`, `level`, `polarity` and `statement`. `polarity` is `required` or
-`forbidden`, and the statement's key words match the level and the polarity: `MUST` for a
-required `MUST`, `MUST NOT` for a forbidden one. A requirement may also hold:
+A requirement needs `id`, `level`, `polarity`, `binds_to`, `statement` and `rationale`.
+`polarity` is `required` or `forbidden`, and the statement's key words match the level and the
+polarity: `MUST` for a required `MUST`, `MUST NOT` for a forbidden one. `binds_to` is `system`,
+for a requirement on what a system does, or `process`, for one on how its writers work, and
+`rationale` says why the requirement holds, in text that isn't empty. A requirement may also
+hold:
 
-- `label` and `rationale`;
+- `label`;
 - `relations`, each a table with a `kind` and a `target` requirement, where the kind is
   `depends_on`, `implies`, `refines`, `conflicts_with` or `supersedes`;
 - `compose`, one of `atomic`, `all_of`, `any_of`, `exactly_one` and `unless`, with its `parts`;
-- `conditions`, `logic` and `params`;
-- `binds_to`, `system` or `process`.
+- `conditions` and `logic`;
+- `params`, each a table that holds the parameter's `name`, its `bound` (`min`, `max` or
+  `exact`), its `type`, its `unit`, and either its `value` or its `source`.
+
+A parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`, and its `unit` is `s`
+for a duration, `B` for a size and `per_s` for a rate; a count and a fraction don't hold a unit.
+The value of a count or a size is a whole number, and the value of a fraction is from 0 to 1. A
+parameter without a value names where its value comes from: `source = "deployment"`, set where
+the system runs, or `source = "contract"`, read from a parameter of the same name in a contract
+RFC.
+
+The last of two or more levels, such as `MAY`, is permissive: a requirement at that level allows
+something, so the consistency checks don't read a formula from it, its logic, its relations or
+its conditions.
 
 ## partimento check
 
@@ -169,8 +200,9 @@ The severity is `error` or `warning`, and a finding that isn't about one require
 the requirement's part. The check runs:
 
 - the format rules: the form, uniqueness and retirement of each identifier, the key words of
-  each statement, the fields of each section and requirement and their values, the form of each
-  section's anchor and title, and the implementation terms;
+  each statement, the fields of each section and requirement and their values, each parameter's
+  type, unit, value and source, the form of each section's anchor and title, each RFC's area and
+  `contract_version`, the agreement of `rfc.toml` and the index, and the implementation terms;
 - the checks of the requirements: that their formulas hold together, which a SAT solver decides,
   with a smallest set of requirements that can't hold together where they don't; that each
   condition can hold while the rest of the set does; each relation's target; the boundary
@@ -247,9 +279,10 @@ partimento diff <base> <head> [--format text|json]
 ```
 
 `diff` prints each requirement added, changed or retired from the tree at `<base>` to the tree
-at `<head>`, and exits with 0. Where either tree breaks a format rule, it prints that tree's
-failing findings instead and exits with 1. It exits with 2 where the arguments are wrong or a
-file can't be read.
+at `<head>`, and each contract RFC whose `contract_version` differs between them, as
+`version <rfc> <base version> <head version>`, and exits with 0. Where either tree breaks a
+format rule, it prints that tree's failing findings instead and exits with 1. It exits with 2
+where the arguments are wrong or a file can't be read.
 
 ## The library
 
