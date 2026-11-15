@@ -1,4 +1,4 @@
 error[parameter] rfcs/0001-greetings/01-greeting.toml:23: EX-0001-002: `greeting.length`'s minimum 100 is above its maximum 80 at rfcs/0001-greetings/01-greeting.toml:14
 error[parameter] rfcs/0001-greetings/01-greeting.toml:32: EX-0001-003: `greeting.length`'s exact value 60 is below its minimum 100 at rfcs/0001-greetings/01-greeting.toml:23
-error[parameter] rfcs/0001-greetings/01-greeting.toml:41: EX-0001-004: a parameter holds `name`, `bound` (`min`, `max` or `exact`), `type` and `value` or `source`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:41: EX-0001-004: a parameter holds `name`, `type`, and either `bound` (`min`, `max` or `exact`) with `value`, or `source`
 error[parameter] rfcs/0001-greetings/01-greeting.toml:50: EX-0001-005: `greeting.length` has a second exact value, 70, beside 60 at rfcs/0001-greetings/01-greeting.toml:32

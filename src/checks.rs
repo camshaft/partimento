@@ -40,8 +40,8 @@ pub const POLARITY_CONFLICT: &str = "polarity-conflict";
 pub const COMPOSITION: &str = "composition";
 /// A `logic` formula that doesn't follow the grammar.
 pub const LOGIC: &str = "logic";
-/// A parameter that doesn't hold its fields, whose type, unit, value or source doesn't fit, or
-/// whose bounds contradict each other.
+/// A parameter that doesn't hold its fields, that holds a bound beside a source, whose type,
+/// unit, value or source doesn't fit, or whose bounds contradict each other.
 pub const PARAMETER: &str = "parameter";
 
 const RELATION_KINDS: &[&str] = &[
@@ -53,8 +53,10 @@ const RELATION_KINDS: &[&str] = &[
 ];
 const BOUNDS: &[&str] = &["min", "max", "exact"];
 const TYPES: &[&str] = &["count", "duration", "size", "rate", "fraction"];
-const FIELDS_MESSAGE: &str =
-    "a parameter holds `name`, `bound` (`min`, `max` or `exact`), `type` and `value` or `source`";
+const FIELDS_MESSAGE: &str = concat!(
+    "a parameter holds `name`, `type`, and either `bound` (`min`, `max` or `exact`) with ",
+    "`value`, or `source`",
+);
 const TYPE_MESSAGE: &str =
     "a parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`";
 
@@ -115,6 +117,13 @@ struct Bound<'a> {
     value: f64,
     file: &'a str,
     line: u32,
+}
+
+/// What a parameter states of its value: a bound on the `value` it holds, or the `source` its
+/// value comes from.
+enum Stated<'a> {
+    Bound(&'a str),
+    Source(&'a str),
 }
 
 /// The bounds of one parameter across the set: the tightest minimum and maximum, and the first
@@ -401,7 +410,13 @@ impl<'a> Context<'a> {
     fn param(&mut self, r: Requirement<'a>, item: &'a Value, line: u32) -> Option<String> {
         let name = text(item, "name");
         let bound = text(item, "bound").filter(|bound| BOUNDS.contains(bound));
-        let (Some(name), Some(bound)) = (name, bound) else {
+        // A parameter with a `source` doesn't state a bound: the bounds that other parameters of
+        // the same name state hold on the value the source sets.
+        let holds = match text(item, "source") {
+            Some(source) => Some(Stated::Source(source)),
+            None => bound.map(Stated::Bound),
+        };
+        let (Some(name), Some(holds)) = (name, holds) else {
             return Some(FIELDS_MESSAGE.to_string());
         };
         let Some(kind) = text(item, "type").filter(|kind| TYPES.contains(kind)) else {
@@ -428,15 +443,22 @@ impl<'a> Context<'a> {
                 self.kinds.insert(name, (kind, r.file, line));
             }
         }
-        let amount = match (item.get("value"), text(item, "source")) {
-            (Some(_), Some(_)) => {
+        let (amount, bound) = match (item.get("value"), holds) {
+            (Some(_), Stated::Source(_)) => {
                 return Some(format!(
                     "`{name}` holds a `value` and a `source`, and not both"
                 ));
             }
-            (None, None) => return Some(format!("`{name}` holds neither `value` nor `source`")),
-            (None, Some(source)) => return self.source_problem(name, source),
-            (Some(amount), None) => amount,
+            (None, Stated::Bound(_)) => {
+                return Some(format!("`{name}` holds neither `value` nor `source`"));
+            }
+            (None, Stated::Source(_)) if item.get("bound").is_some() => {
+                return Some(format!(
+                    "`{name}` holds a `source`, so it doesn't hold a `bound`"
+                ));
+            }
+            (None, Stated::Source(source)) => return self.source_problem(name, source),
+            (Some(amount), Stated::Bound(bound)) => (amount, bound),
         };
         let Some(value) = number(amount) else {
             return Some(format!("`{name}`'s `value` is a number"));

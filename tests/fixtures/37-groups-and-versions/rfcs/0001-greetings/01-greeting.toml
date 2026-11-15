@@ -11,4 +11,4 @@ id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a greeting within the wait the transfer sets."
-params = [{ name = "transfer.wait", bound = "max", type = "duration", unit = "s", source = "contract" }]
+params = [{ name = "transfer.wait", type = "duration", unit = "s", source = "contract" }]
