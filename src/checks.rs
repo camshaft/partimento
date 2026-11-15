@@ -1578,7 +1578,10 @@ last = 99
         let expected = [
             (Formula::atom(&own), 10),
             (Formula::atom(&own).iff(Formula::at_least_one(atoms())), 14),
-            (Formula::atom(&own).implies(Formula::exactly_one(atoms())), 14),
+            (
+                Formula::atom(&own).implies(Formula::exactly_one(atoms())),
+                14,
+            ),
         ];
         assert_eq!(formula_set.formulas.len(), expected.len());
         for (entry, (formula, line)) in formula_set.formulas.iter().zip(expected) {
