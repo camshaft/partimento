@@ -297,7 +297,9 @@ mod binary {
 
     use partimento::Tree;
 
-    use super::{fixture, with_registry, BROKEN, BROKEN_EXPECTED, HEAD, HEAD_EXPECTED, REGISTRY};
+    use super::{
+        fixture, with_registry, BROKEN, BROKEN_EXPECTED, ENTRIES, HEAD, HEAD_EXPECTED, REGISTRY,
+    };
 
     fn run(args: &[&str]) -> Output {
         let program = env!("CARGO_BIN_EXE_partimento");
@@ -375,5 +377,31 @@ mod binary {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(2), "{stderr}");
         assert!(stderr.contains("symbolic link"), "{stderr}");
+    }
+
+    /// A link at a directory of the registry's path stops the read too, and not only a link at
+    /// its last part: `registry/` links to a directory that holds the fixture's registry, which a
+    /// read through the link would find, and whose check would pass.
+    #[cfg(unix)]
+    #[test]
+    fn a_registry_under_a_directory_that_is_a_symbolic_link_exits_with_2() {
+        let dir = scratch("registry-directory-link");
+        let mut tree = fixture();
+        tree.files.remove(REGISTRY);
+        write(&dir, &tree);
+        let target = dir.join("elsewhere");
+        std::fs::create_dir_all(&target).expect("the directory is made");
+        let file = target.join("identifiers.toml");
+        std::fs::write(&file, ENTRIES).expect("the file is written");
+        let link = dir.join("registry");
+        std::os::unix::fs::symlink(&target, &link).expect("the link is made");
+        let metadata = std::fs::symlink_metadata(&link).expect("the link is there");
+        assert!(metadata.file_type().is_symlink());
+        let through = std::fs::read_to_string(dir.join(REGISTRY));
+        assert_eq!(through.expect("the link leads to the registry"), ENTRIES);
+        let output = run(&["check", "--root", dir.to_str().expect("the path is UTF-8")]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{stderr}");
+        assert!(stderr.contains("/registry: a symbolic link"), "{stderr}");
     }
 }
