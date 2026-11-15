@@ -77,7 +77,7 @@ const FIXTURES: &[Fixture] = &[
         "rfcs/0003-replies/rfc.toml",
         "rfcs/0100-transfer/rfc.toml",
         "rfcs/0100-transfer/01-transfer.toml",
-        "rfcs/0101-handoff/rfc.toml",
+        "rfcs/0101-courier/rfc.toml",
         "rfcs/0102-relay/rfc.toml",
         "rfcs/0900-base/rfc.toml"
     ),
