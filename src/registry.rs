@@ -127,8 +127,10 @@ pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding
 /// Each entry of the registry of `base` that the registry of `head` removes, or whose identifies,
 /// format or body_length it changes, as a finding of the head's side, with its file's path after
 /// `head:`. An entry is the same in both trees where both hold its code, so a change of its code
-/// removes it. A registry that isn't UTF-8 or doesn't parse isn't compared: the check of its tree
-/// reports it.
+/// removes it. Where the head's registry isn't UTF-8 or doesn't parse, the answer is the
+/// findings of that read, with the file's path after `head:`, since the head doesn't show that it
+/// keeps any entry. A base registry that isn't UTF-8 or doesn't parse isn't compared: the check
+/// of the base tree reports it.
 pub(crate) fn kept(base: (&Tree, &Config), head: (&Tree, &Config)) -> Vec<Finding> {
     let Some(base_file) = base.1.paths.registry.as_deref() else {
         return Vec::new();
@@ -141,10 +143,18 @@ pub(crate) fn kept(base: (&Tree, &Config), head: (&Tree, &Config)) -> Vec<Findin
     };
     let head_file = head.1.paths.registry.as_deref();
     let after = match head_file.and_then(|file| Some((file, head.0.files.get(file)?))) {
-        Some((file, bytes)) => match read(file, bytes, &mut Vec::new()) {
-            Some(after) => after,
-            None => return Vec::new(),
-        },
+        Some((file, bytes)) => {
+            let mut unread = Vec::new();
+            match read(file, bytes, &mut unread) {
+                Some(after) => after,
+                None => {
+                    for finding in &mut unread {
+                        finding.file = format!("head:{}", finding.file);
+                    }
+                    return unread;
+                }
+            }
+        }
         None => Vec::new(),
     };
     let by_code: BTreeMap<&str, &Entry> = after

@@ -14,6 +14,9 @@
 //! `contract_version` differs between them, and exits with 0. Where either tree
 //! fails a format rule, it prints that tree's failing findings instead and exits with 1, and it
 //! exits with 2 where the arguments are wrong or a file can't be read.
+//! Where the head removes or changes an entry of the base's registry, it prints each with the
+//! rule `registry-kept` and exits with 1, and where the head's registry isn't UTF-8 or doesn't
+//! parse, it prints the findings of that read and exits with 1.
 //!
 //! `partimento render [--root <dir>] [--format text|json]` writes each generated file that differs
 //! from the tree, removes each file under the generated directories that the render doesn't

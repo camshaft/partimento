@@ -216,7 +216,8 @@ alone.
 
 A change of the set adds entries, and doesn't remove one or change its `code`, `identifies`,
 `format` or `body_length`: `partimento diff` reports each entry of the base that the head
-removes or changes, with the rule `registry-kept`, and exits with 1.
+removes or changes, with the rule `registry-kept`, and exits with 1. Where the head's registry
+isn't UTF-8 or doesn't parse, it reports the findings of that read instead, and exits with 1.
 
 ## partimento check
 
