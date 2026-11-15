@@ -723,22 +723,35 @@ impl<'a> Context<'a> {
     }
 
     /// The text that a finding of check 1 shows for the formula at `index`, between backticks.
-    /// A composed `exactly_one`'s exclusion shows, among its parts, each part that a formula of
-    /// `conflict` other than the composition's own two formulas names, and `...` in place of the
-    /// others: a part that none of them names can be false without making the conflict's
-    /// formulas hold together, so it isn't part of the conflict.
+    /// A composed `exactly_one`'s `R <-> (P1 | ... | Pn)` and its exclusion each show, among
+    /// their parts, each part that a formula of `conflict` other than the composition's own two
+    /// formulas names, and `...` in place of the others: a part that none of them names can be
+    /// false without making the conflict's formulas hold together, so it isn't part of the
+    /// conflict.
     fn shown(&self, index: usize, conflict: &[usize]) -> String {
         let formula = &self.set.formulas[index].formula;
-        let iff = self.exclusions.get(&index).copied();
-        let (Some(iff), Formula::Implies(own, body)) = (iff, formula) else {
-            return format!("`{formula}`");
+        let whole = || format!("`{formula}`");
+        // The composition's own two formulas: `exclusions` holds, at the index of its exclusion,
+        // the index of its `<->`, which comes just before the exclusion.
+        let (iff, exclusion) = match self.exclusions.get(&index) {
+            Some(&iff) => (iff, index),
+            None if self.exclusions.get(&(index + 1)) == Some(&index) => (index, index + 1),
+            None => return whole(),
         };
-        let Formula::ExactlyOne(parts) = &**body else {
-            return format!("`{formula}`");
+        let (own, parts, op, open, between) = match formula {
+            Formula::Implies(own, body) => match &**body {
+                Formula::ExactlyOne(parts) => (own, parts, "->", "exactly_one(", ", "),
+                _ => return whole(),
+            },
+            Formula::Iff(own, body) => match &**body {
+                Formula::Or(parts) => (own, parts, "<->", "(", " | "),
+                _ => return whole(),
+            },
+            _ => return whole(),
         };
         let mut named = BTreeSet::new();
         for &other in conflict {
-            if other != index && other != iff {
+            if other != iff && other != exclusion {
                 names_of(&self.set.formulas[other].formula, &mut named);
             }
         }
@@ -750,7 +763,7 @@ impl<'a> Context<'a> {
         if listed.len() < parts.len() {
             listed.push("...".to_owned());
         }
-        format!("`({own} -> exactly_one({}))`", listed.join(", "))
+        format!("`({own} {op} {open}{}))`", listed.join(between))
     }
 
     /// Finds each held requirement that a held requirement's `supersedes` relation retires,
@@ -1624,31 +1637,30 @@ last = 99
         Finding::error(UNSATISFIABLE, GREETING, line, Some(requirement), message)
     }
 
-    /// A conflict through a composed `exactly_one` shows, in the composition's exclusion, the
-    /// parts that the conflict's other formulas name, and `...` for the parts that none of them
-    /// names.
+    /// A conflict through a composed `exactly_one` shows, in the composition's `<->` and in its
+    /// exclusion, the parts that the conflict's other formulas name, and `...` for the parts
+    /// that none of them names, so a conflict through a composition of 100,000 parts shows the
+    /// two parts it names.
     fn a_conflict_shows_the_parts_it_names<B: Backend + Default>() {
-        let iff = "`(EX-0001-001 <-> (EX-0001-002 | EX-0001-003 | EX-0001-004))`";
-        for (logic, exclusion) in [
-            (
-                "EX-0001-002 & EX-0001-003",
-                "`(EX-0001-001 -> exactly_one(EX-0001-002, EX-0001-003, ...))`",
-            ),
-            (
-                "EX-0001-002 & EX-0001-003 & EX-0001-004",
-                "`(EX-0001-001 -> exactly_one(EX-0001-002, EX-0001-003, EX-0001-004))`",
-            ),
-        ] {
+        let two = "EX-0001-002 & EX-0001-003";
+        let three = "EX-0001-002 & EX-0001-003 & EX-0001-004";
+        let named = ["EX-0001-002", "EX-0001-003", "..."];
+        let every = ["EX-0001-002", "EX-0001-003", "EX-0001-004"];
+        for (parts, logic, listed) in [(3, two, named), (3, three, every), (PARTS, two, named)] {
+            let iff = format!("`(EX-0001-001 <-> ({}))`", listed.join(" | "));
+            let exclusion = format!("`(EX-0001-001 -> exactly_one({}))`", listed.join(", "));
             let mut findings = Vec::new();
-            check::<Wide<B>>(&config(), &composed(3, Some(logic)), &mut findings);
+            check::<Wide<B>>(&config(), &composed(parts, Some(logic)), &mut findings);
             let text = format!("`{}`", parse(logic).unwrap());
-            let formula = text.as_str();
+            let (iff, exclusion, formula) = (iff.as_str(), exclusion.as_str(), text.as_str());
+            let line = u32::try_from(24 + 10 * parts).unwrap();
+            let last = id(parts + 2);
             let expected = [
-                conflict(14, "EX-0001-001", iff, &[(exclusion, 14), (formula, 54)]),
-                conflict(14, "EX-0001-001", exclusion, &[(iff, 14), (formula, 54)]),
-                conflict(54, "EX-0001-005", formula, &[(iff, 14), (exclusion, 14)]),
+                conflict(14, "EX-0001-001", iff, &[(exclusion, 14), (formula, line)]),
+                conflict(14, "EX-0001-001", exclusion, &[(iff, 14), (formula, line)]),
+                conflict(line, &last, formula, &[(iff, 14), (exclusion, 14)]),
             ];
-            assert_eq!(findings, expected, "{logic}");
+            assert_eq!(findings, expected, "{parts} parts, {logic}");
         }
     }
 
