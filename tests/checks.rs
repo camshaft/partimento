@@ -237,14 +237,26 @@ fn with_formula(fixture: &Fixture, formula: &str) -> Tree {
 fn exactly_one_fails_where_other_formulas_force_both_parts() {
     let fixture = named("16-exactly-one");
     let tree = with_formula(fixture, "EX-0001-002 & EX-0001-003");
-    // The pairwise exclusion at the `compose` line and the extra formula.
-    let expected = [
+    // The exclusion at the `compose` line and the extra formula, with the requirement at its
+    // `id` line or its `<->` formula at the `compose` line, either of which makes it hold.
+    let asserted = [
+        ("unsatisfiable", GREETING, 10),
         ("unsatisfiable", GREETING, 14),
         ("unsatisfiable", EXTRA_PATH, 12),
     ];
+    let composed = [
+        ("unsatisfiable", GREETING, 14),
+        ("unsatisfiable", GREETING, 14),
+        ("unsatisfiable", EXTRA_PATH, 12),
+    ];
+    let exclusion = "`(EX-0001-001 -> exactly_one(EX-0001-002, EX-0001-003))`";
     for (backend, check) in backends() {
         let report = check(&tree, &Options::default());
-        assert_eq!(places(&report), expected, "{backend}: {}", lines(&report));
+        let found = places(&report);
+        let shown = lines(&report);
+        let either = found == asserted || found == composed;
+        assert!(either, "{backend}: {shown}");
+        assert!(shown.contains(exclusion), "{backend}: {shown}");
         assert!(report.failed(), "{backend}");
     }
 }
