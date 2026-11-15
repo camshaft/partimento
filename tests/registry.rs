@@ -303,7 +303,10 @@ fn a_head_whose_registry_doesnt_read_fails_the_diff() {
         assert_eq!(found[0].file, format!("head:{REGISTRY}"), "{bytes:?}");
         assert_eq!(found[0].line, 2, "{bytes:?}");
         let versions = partimento::contract_versions(&fixture(), &head);
-        assert_eq!(lines(&versions.expect_err("it doesn't read")), lines(&found));
+        assert_eq!(
+            lines(&versions.expect_err("it doesn't read")),
+            lines(&found)
+        );
         let both = partimento::diff_with_versions(&fixture(), &head);
         assert_eq!(lines(&both.expect_err("it doesn't read")), lines(&found));
     }
