@@ -1,0 +1,18 @@
+prefix = "EX"
+levels = ["MUST", "SHOULD", "MAY"]
+implementation_terms = ["sqlite", "message queue"]
+
+[paths]
+rfcs = "rfcs"
+rendered = "rendered"
+requirements = ".duvet/requirements"
+
+[[system]]
+name = "core"
+first = 1
+last = 99
+
+[contracts]
+name = "contracts"
+first = 100
+last = 199
