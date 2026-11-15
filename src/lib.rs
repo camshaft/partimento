@@ -17,6 +17,7 @@ mod diff;
 pub mod json;
 pub mod logic;
 pub mod model;
+pub mod registry;
 mod render;
 pub mod rules;
 pub mod solver;
@@ -203,9 +204,11 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
     let mut findings = Vec::new();
     let mut formulas = logic::FormulaSet::default();
     // A set that breaks a format rule doesn't render, so the drift of its generated files is
-    // checked only once its format rules pass.
+    // checked only once its format rules pass. The registry isn't a source of the render, so its
+    // findings don't stop the drift check.
     if let Some((config, set)) = load(tree, cache, &mut findings) {
         let renders = !fails(&findings);
+        registry::check(tree, &config, &set, &mut findings);
         formulas = checks::check_cached::<B, C>(&config, &set, cache, &mut findings);
         if renders {
             let paths = render::Paths::of(&config.paths);
@@ -227,7 +230,10 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
 
 /// Each requirement added, changed and retired from `base` to `head`, two trees of one set, in
 /// the order of its identifier; or, where either tree fails a format rule, each finding that
-/// fails, the base's first, with its file's path after the tree's side, `base:` or `head:`.
+/// fails, the base's first, with its file's path after the tree's side, `base:` or `head:`; or,
+/// where both pass and the head removes an entry of the base's registry or changes its
+/// identifies, format or body_length, a finding of each such entry, with its file's path after
+/// `head:`.
 pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
     diff::changes(base, head)
 }

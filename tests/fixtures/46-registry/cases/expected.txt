@@ -1,0 +1,17 @@
+error[registry] registry/identifiers.toml:17: the entry holds `status`, and an entry holds only code, identifies, format, body_length and defined_by
+error[registry] registry/identifiers.toml:20: the entry doesn't hold `defined_by`
+error[registry] registry/identifiers.toml:31: body_length doesn't hold `max`
+error[registry] registry/identifiers.toml:31: body_length holds `most`, and it holds only min and max
+error[registry] registry/identifiers.toml:39: body_length's min, 9, is greater than its max, 8
+error[registry] registry/identifiers.toml:44: the code `g` is the code of the entry at line 3 too
+error[registry] registry/identifiers.toml:56: defined_by is `EX-0001-009`, which no requirement of a written RFC holds
+error[registry] registry/identifiers.toml:64: defined_by is `EX-0001-003`, which an RFC retires
+error[registry] registry/identifiers.toml:67: the entry at line 3 holds the same identifies and format
+error[registry] registry/identifiers.toml:76: code is an integer, which isn't a text
+error[registry] registry/identifiers.toml:85: identifies is an integer, which isn't a text that states a kind of record
+error[registry] registry/identifiers.toml:94: format is 0, which isn't a whole number of at least 1
+error[registry] registry/identifiers.toml:103: body_length's max is a text, which isn't a whole number
+error[registry] registry/identifiers.toml:111: body_length's min is 0, which is less than 1
+error[registry] registry/identifiers.toml:119: body_length is an integer, which isn't a table of min and max
+error[registry] registry/identifiers.toml:128: defined_by is an integer, which isn't the identifier of a requirement
+error[registry] registry/identifiers.toml:133: identifies is blank, which doesn't state a kind of record

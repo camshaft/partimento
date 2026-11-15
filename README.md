@@ -64,6 +64,7 @@ implementation_terms = ["sqlite", "message queue"]
 rfcs = "rfcs"
 rendered = "rendered"
 requirements = ".duvet/requirements"
+registry = "registry/identifiers.toml"
 
 [[system]]
 name = "core"
@@ -88,7 +89,9 @@ last = 999
   a statement that uses one of them, since a requirement states what a system does and names
   such a part by its category.
 - `[paths]` sets the directory of the RFC sources, of the rendered sections and of the
-  requirement files.
+  requirement files, and may set `registry`, the path of the registry of identifier kinds, a file
+  outside those three directories. A set whose `[paths]` leaves `registry` out doesn't hold a
+  registry.
 - Each `[[system]]`, `[contracts]` and `[foundation]` sets a group of RFCs: its name and the
   range of its RFC numbers, `first` to `last`. `[contracts]` holds the RFCs of the contracts
   between the systems, and `[foundation]` the RFCs every system builds on. The check reads the
@@ -188,6 +191,33 @@ are still checked, and the other checks of the requirements still read it: its `
 forbidden one, its `implies` and `refines` relations count in cycles, and its parameters' bounds
 count with the others'.
 
+### The registry
+
+The registry lists each kind of self-describing identifier that an RFC of the set specifies, one
+`[[entry]]` for each format of the kind:
+
+```toml
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+```
+
+An entry holds `code`, `identifies`, `format`, `body_length` and `defined_by`, and no other field.
+`code` is a text that no other entry holds, and `identifies` a text that states the kind of record
+the code identifies; no two entries hold the same `identifies` and `format`. `format` is a whole
+number of at least 1, the number of the identifier's form that the code names. `body_length` holds
+`min` and `max` alone, the fewest and the most characters of a body, each a whole number, `min` at
+least 1 and not greater than `max`. `defined_by` is the identifier of a requirement of a written
+RFC that no RFC retires. A registry that doesn't hold an entry yet is a file of comment lines
+alone.
+
+A change of the set adds entries, and doesn't remove one or change its `code`, `identifies`,
+`format` or `body_length`: `partimento diff` reports each entry of the base that the head
+removes or changes, with the rule `registry-kept`, and exits with 1.
+
 ## partimento check
 
 ```text
@@ -209,6 +239,8 @@ the requirement's part. The check runs:
   each statement, the fields of each section and requirement and their values, each parameter's
   type, unit, value and source, the form of each section's anchor and title, each RFC's area and
   `contract_version`, the agreement of `rfc.toml` and the index, and the implementation terms;
+- the registry's rules, where spec.toml sets `paths.registry`: that the file is there, and the
+  fields of each entry and their values;
 - the checks of the requirements: that their formulas hold together, which a SAT solver decides,
   with a smallest set of requirements that can't hold together where they don't; that each
   condition can hold while the rest of the set does; each relation's target; the boundary

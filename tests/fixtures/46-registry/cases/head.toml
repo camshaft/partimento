@@ -1,0 +1,15 @@
+# The base's entry g with another body_length, without the entry h, and with a new entry r.
+
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 9 }
+defined_by = "EX-0001-001"
+
+[[entry]]
+code = "r"
+identifies = "a reply"
+format = 1
+body_length = { min = 4, max = 4 }
+defined_by = "EX-0001-002"

@@ -1,0 +1,136 @@
+# Each entry after the first breaks one rule of the registry, as the comment above it says.
+
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A field other than the five.
+[[entry]]
+code = "a"
+identifies = "a farewell"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+status = "planned"
+
+# Without defined_by.
+[[entry]]
+code = "b"
+identifies = "a reply"
+format = 1
+body_length = { min = 8, max = 8 }
+
+# A body_length with a field other than min and max, and without max.
+[[entry]]
+code = "c"
+identifies = "a name"
+format = 1
+body_length = { min = 8, most = 9 }
+defined_by = "EX-0001-001"
+
+# A min greater than the max.
+[[entry]]
+code = "d"
+identifies = "a time"
+format = 1
+body_length = { min = 9, max = 8 }
+defined_by = "EX-0001-001"
+
+# The code of the first entry.
+[[entry]]
+code = "g"
+identifies = "a place"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A defined_by that no requirement holds.
+[[entry]]
+code = "e"
+identifies = "a date"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-009"
+
+# A defined_by that the RFC retires.
+[[entry]]
+code = "f"
+identifies = "a week"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-003"
+
+# The identifies and the format of the first entry.
+[[entry]]
+code = "i"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A code that isn't a text.
+[[entry]]
+code = 7
+identifies = "a month"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# An identifies that isn't a text.
+[[entry]]
+code = "j"
+identifies = 3
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A format of 0.
+[[entry]]
+code = "k"
+identifies = "a year"
+format = 0
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A max that isn't a whole number.
+[[entry]]
+code = "l"
+identifies = "an hour"
+format = 1
+body_length = { min = 8, max = "eight" }
+defined_by = "EX-0001-001"
+
+# A min of 0.
+[[entry]]
+code = "m"
+identifies = "a minute"
+format = 1
+body_length = { min = 0, max = 8 }
+defined_by = "EX-0001-001"
+
+# A body_length that isn't a table.
+[[entry]]
+code = "n"
+identifies = "a second"
+format = 1
+body_length = 8
+defined_by = "EX-0001-001"
+
+# A defined_by that isn't a text.
+[[entry]]
+code = "o"
+identifies = "a day"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = 1
+
+# An identifies that is blank.
+[[entry]]
+code = "p"
+identifies = " "
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
