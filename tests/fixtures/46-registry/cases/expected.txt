@@ -15,3 +15,5 @@ error[registry] registry/identifiers.toml:111: body_length's min is 0, which is 
 error[registry] registry/identifiers.toml:119: body_length is an integer, which isn't a table of min and max
 error[registry] registry/identifiers.toml:128: defined_by is an integer, which isn't the identifier of a requirement
 error[registry] registry/identifiers.toml:133: identifies is blank, which doesn't state a kind of record
+error[registry] registry/identifiers.toml:142: format is a text, which isn't a whole number of at least 1
+error[registry] registry/identifiers.toml:151: body_length's min is a text, which isn't a whole number

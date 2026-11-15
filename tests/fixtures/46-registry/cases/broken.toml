@@ -134,3 +134,19 @@ identifies = " "
 format = 1
 body_length = { min = 8, max = 8 }
 defined_by = "EX-0001-001"
+
+# A format that is a text, with the identifies of the first entry.
+[[entry]]
+code = "q"
+identifies = "a greeting"
+format = "1"
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A min that isn't a whole number.
+[[entry]]
+code = "r"
+identifies = "a fortnight"
+format = 1
+body_length = { min = "eight", max = 8 }
+defined_by = "EX-0001-001"
