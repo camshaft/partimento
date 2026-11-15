@@ -1,0 +1,6 @@
+number = 100
+title = "Transfer"
+area = "contracts"
+contract_version = 2
+abstract = "How the greeting hands its job over."
+retired = []

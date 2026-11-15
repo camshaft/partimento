@@ -5,6 +5,8 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
@@ -13,18 +15,24 @@ compose = "all_of"
 parts = ["EX-0001-002", "EX-0001-003"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-002"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a greeting when it starts."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a banner when it starts."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-004"
 level = "MUST"
 polarity = "required"
@@ -32,6 +40,8 @@ statement = "The program MUST print a banner when it starts and when it stops."
 relations = [{ kind = "supersedes", target = "EX-0001-001" }]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-005"
 level = "MUST"
 polarity = "required"

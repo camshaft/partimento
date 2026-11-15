@@ -1,0 +1,14 @@
+[section]
+anchor = "transfer"
+title = "Transfer"
+problem = "A person doesn't know how long the greeting waits for its job."
+motivation = "A transfer tells the person how long the greeting waits."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0100-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST hand its job over within 30 seconds."
+params = [{ name = "transfer.wait", bound = "max", type = "duration", unit = "s", value = 30 }]

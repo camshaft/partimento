@@ -5,10 +5,10 @@
 {"id":"EX-0001-003","rfc":1,"section":"rfcs/0001-greetings/01-greeting.toml","level":"SHOULD","polarity":"required"}
 ],
 "formulas": [
-{"formula":{"atom":"EX-0001-001"},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":8},"relation":null},
-{"formula":{"atom":"EX-0001-002"},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":14},"relation":null},
-{"formula":{"not":{"and":[{"atom":"EX-0001-002"},{"atom":"EX-0001-001"}]}},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":18},"relation":{"kind":"conflicts_with","target":"EX-0001-001"}},
-{"formula":{"atom":"EX-0001-003"},"origin":{"requirement":"EX-0001-003","file":"rfcs/0001-greetings/01-greeting.toml","line":21},"relation":null}
+{"formula":{"atom":"EX-0001-001"},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":10},"relation":null},
+{"formula":{"atom":"EX-0001-002"},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":18},"relation":null},
+{"formula":{"not":{"and":[{"atom":"EX-0001-002"},{"atom":"EX-0001-001"}]}},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":22},"relation":{"kind":"conflicts_with","target":"EX-0001-001"}},
+{"formula":{"atom":"EX-0001-003"},"origin":{"requirement":"EX-0001-003","file":"rfcs/0001-greetings/01-greeting.toml","line":27},"relation":null}
 ],
 "conditions": []
 }

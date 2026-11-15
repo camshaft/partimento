@@ -6,6 +6,8 @@ motivation = "A farewell tells the person that the program stopped."
 prose = "The program takes leave of the person when it stops."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0002-001"
 level = "MAY"
 polarity = "required"

@@ -1,8 +1,8 @@
 //! The set's configuration, read from spec.toml at the root of the tree.
 //!
-//! The code holds none of these values: the identifier prefix, the paths, the levels, the RFC
-//! numbers of each system and of the contracts, and the implementation terms all come from the
-//! file.
+//! The code holds none of these values: the identifier prefix, the paths, the levels, the name
+//! and the RFC numbers of each system, of the contracts and of the foundation, and the
+//! implementation terms all come from the file.
 
 use std::ops::Range;
 
@@ -26,11 +26,35 @@ pub struct Config {
     /// The key words of the statements, such as `MUST`, `SHOULD` and `MAY`.
     pub levels: Vec<String>,
     pub systems: Vec<System>,
-    /// The RFC numbers of the contracts between the systems.
-    pub contracts: Option<NumberRange>,
+    /// The group of the contracts between the systems.
+    pub contracts: Option<Group>,
+    /// The group of the RFCs that every system reads, such as the format of the set itself.
+    pub foundation: Option<Group>,
     /// The terms that name how a system is built, which a statement names by their category
     /// instead.
     pub implementation_terms: Vec<String>,
+}
+
+impl Config {
+    /// Each group the configuration declares: the systems, then the contracts, then the
+    /// foundation.
+    pub fn groups(&self) -> impl Iterator<Item = &Group> {
+        self.systems
+            .iter()
+            .chain(&self.contracts)
+            .chain(&self.foundation)
+    }
+
+    /// The group whose name is `name`, where the configuration declares one.
+    pub fn group(&self, name: &str) -> Option<&Group> {
+        self.groups().find(|group| group.name == name)
+    }
+
+    /// Whether the RFC number is in the contracts' group.
+    pub fn is_contract(&self, number: u32) -> bool {
+        let contracts = self.contracts.as_ref();
+        contracts.is_some_and(|group| group.rfcs.contains(number))
+    }
 }
 
 /// The directories of the set, relative to the root of the tree, each with its parts joined by
@@ -46,12 +70,15 @@ pub struct Paths {
     pub requirements: String,
 }
 
-/// A system and the RFC numbers it holds.
+/// A group of RFCs: its name, which an RFC's area holds, and the RFC numbers it holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct System {
+pub struct Group {
     pub name: String,
     pub rfcs: NumberRange,
 }
+
+/// A system: a group of the RFCs of one part of the product.
+pub type System = Group;
 
 /// The RFC numbers from `first` to `last`, both included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -79,16 +106,18 @@ struct Raw {
     paths: RawPaths,
     levels: Spanned<Vec<String>>,
     #[serde(default, rename = "system")]
-    systems: Vec<RawSystem>,
+    systems: Vec<RawGroup>,
     #[serde(default)]
-    contracts: Option<Spanned<NumberRange>>,
+    contracts: Option<Spanned<RawGroup>>,
+    #[serde(default)]
+    foundation: Option<Spanned<RawGroup>>,
     #[serde(default)]
     implementation_terms: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawSystem {
+struct RawGroup {
     name: Spanned<String>,
     first: u32,
     last: u32,
@@ -102,7 +131,7 @@ struct RawPaths {
     requirements: Spanned<String>,
 }
 
-impl RawSystem {
+impl RawGroup {
     fn range(&self) -> NumberRange {
         NumberRange {
             first: self.first,
@@ -111,8 +140,8 @@ impl RawSystem {
     }
 }
 
-fn system(raw: RawSystem) -> System {
-    System {
+fn group(raw: RawGroup) -> Group {
+    Group {
         rfcs: raw.range(),
         name: raw.name.into_inner(),
     }
@@ -145,6 +174,18 @@ fn under(inner: &str, outer: &str) -> bool {
 /// same files; both call this, so they can't disagree on which files are generated.
 pub fn is_generated(rendered: &str, requirements: &str, path: &str) -> bool {
     under(path, rendered) || under(path, requirements)
+}
+
+/// One group as the file declares it, for the checks of its name and its range.
+struct Declared<'a> {
+    /// How a finding names the group, such as "system `core`" or "the contracts".
+    label: String,
+    name: &'a str,
+    /// The line of its name.
+    name_line: u32,
+    range: NumberRange,
+    /// The line a finding about its range is at.
+    range_line: u32,
 }
 
 /// Reads the configuration from the tree, or adds the findings that say why it can't.
@@ -210,25 +251,55 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         }
     }
 
-    let mut ranges = Vec::new();
+    let mut groups = Vec::new();
     for system in &raw.systems {
-        let name = format!("system `{}`", system.name.get_ref());
-        ranges.push((name, system.range(), line(system.name.span())));
+        let at = line(system.name.span());
+        groups.push(Declared {
+            label: format!("system `{}`", system.name.get_ref()),
+            name: system.name.get_ref(),
+            name_line: at,
+            range: system.range(),
+            range_line: at,
+        });
     }
-    if let Some(contracts) = &raw.contracts {
-        let name = "the contracts".to_string();
-        ranges.push((name, *contracts.get_ref(), line(contracts.span())));
+    let tables = [
+        ("the contracts", &raw.contracts),
+        ("the foundation", &raw.foundation),
+    ];
+    for (label, table) in tables {
+        let Some(table) = table else {
+            continue;
+        };
+        let declared = table.get_ref();
+        groups.push(Declared {
+            label: label.to_string(),
+            name: declared.name.get_ref(),
+            name_line: line(declared.name.span()),
+            range: declared.range(),
+            range_line: line(table.span()),
+        });
     }
-    for (index, (name, range, at)) in ranges.iter().enumerate() {
+    for (index, group) in groups.iter().enumerate() {
+        let (label, range) = (&group.label, group.range);
+        if group.name.is_empty() {
+            let message = format!("the name of {label} is empty");
+            findings.push(Finding::error(RULE, FILE, group.name_line, None, message));
+        }
         if range.first > range.last {
             let (first, last) = (range.first, range.last);
-            let message = format!("the RFC numbers of {name} run from {first} down to {last}");
-            findings.push(Finding::error(RULE, FILE, *at, None, message));
+            let message = format!("the RFC numbers of {label} run from {first} down to {last}");
+            findings.push(Finding::error(RULE, FILE, group.range_line, None, message));
         }
-        for (other, other_range, _) in &ranges[..index] {
-            if range.overlaps(other_range) {
-                let message = format!("the RFC numbers of {name} overlap those of {other}");
-                findings.push(Finding::error(RULE, FILE, *at, None, message));
+        for other in &groups[..index] {
+            let other_label = &other.label;
+            if range.overlaps(&other.range) {
+                let message = format!("the RFC numbers of {label} overlap those of {other_label}");
+                findings.push(Finding::error(RULE, FILE, group.range_line, None, message));
+            }
+            if !group.name.is_empty() && group.name == other.name {
+                let name = group.name;
+                let message = format!("{label} has the name `{name}`, which {other_label} has too");
+                findings.push(Finding::error(RULE, FILE, group.name_line, None, message));
             }
         }
     }
@@ -236,7 +307,7 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         return None;
     }
 
-    let systems = raw.systems.into_iter().map(system).collect();
+    let systems = raw.systems.into_iter().map(group).collect();
     Some(Config {
         prefix: raw.prefix.into_inner(),
         paths: Paths {
@@ -246,7 +317,8 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
         },
         levels: raw.levels.into_inner(),
         systems,
-        contracts: raw.contracts.map(Spanned::into_inner),
+        contracts: raw.contracts.map(|table| group(table.into_inner())),
+        foundation: raw.foundation.map(|table| group(table.into_inner())),
         implementation_terms: raw.implementation_terms,
     })
 }
@@ -254,7 +326,7 @@ pub fn load(tree: &Tree, findings: &mut Vec<Finding>) -> Option<Config> {
 #[cfg(test)]
 mod tests {
     use super::{is_generated, load, FILE};
-    use crate::{ByteVec, Tree};
+    use crate::{ByteVec, Finding, Tree};
 
     /// A configuration whose levels, on line 1, hold a lowercase word, whose prefix, on line 3,
     /// isn't letters and digits, and whose system named on line 12 has RFC numbers that run down.
@@ -290,6 +362,92 @@ last = 1
             (12, "the RFC numbers of system `core` run from 9 down to 1"),
         ];
         assert_eq!(found, expected);
+    }
+
+    /// A configuration whose groups each hold a name and a range: two systems, the contracts and
+    /// the foundation.
+    const GROUPS: &str = r#"prefix = "EX"
+levels = ["MUST"]
+
+[paths]
+rfcs = "rfcs"
+rendered = "rendered"
+requirements = "requirements"
+
+[[system]]
+name = "core"
+first = 1
+last = 99
+
+[[system]]
+name = "edge"
+first = 200
+last = 299
+
+[contracts]
+name = "contracts"
+first = 100
+last = 199
+
+[foundation]
+name = "format"
+first = 0
+last = 0
+"#;
+
+    /// The tree that holds `text` as its configuration.
+    fn tree(text: &str) -> Tree {
+        let mut tree = Tree::default();
+        tree.files
+            .insert(FILE.to_string(), ByteVec::from(text.to_string()));
+        tree
+    }
+
+    #[test]
+    fn each_group_holds_its_name_and_its_range() {
+        let mut findings = Vec::new();
+        let config = load(&tree(GROUPS), &mut findings).expect("the configuration loads");
+        assert_eq!(findings, []);
+        let names: Vec<&str> = config.groups().map(|group| group.name.as_str()).collect();
+        assert_eq!(names, ["core", "edge", "contracts", "format"]);
+        let format = config.group("format").expect("the foundation's group");
+        assert!(format.rfcs.contains(0));
+        assert!(config.is_contract(150));
+        assert!(!config.is_contract(250));
+        assert!(config.group("missing").is_none());
+    }
+
+    #[test]
+    fn a_group_name_that_another_group_holds_fails_at_its_line() {
+        let text = GROUPS.replace("name = \"format\"", "name = \"edge\"");
+        let mut findings = Vec::new();
+        assert!(load(&tree(&text), &mut findings).is_none());
+        let message = "the foundation has the name `edge`, which system `edge` has too";
+        assert_eq!(
+            findings,
+            [Finding::error("config", FILE, 25, None, message)]
+        );
+    }
+
+    #[test]
+    fn a_foundation_range_that_overlaps_a_system_fails_at_its_table() {
+        let text = GROUPS.replace("first = 0\nlast = 0", "first = 0\nlast = 1");
+        let mut findings = Vec::new();
+        assert!(load(&tree(&text), &mut findings).is_none());
+        let message = "the RFC numbers of the foundation overlap those of system `core`";
+        assert_eq!(
+            findings,
+            [Finding::error("config", FILE, 24, None, message)]
+        );
+    }
+
+    #[test]
+    fn a_group_without_a_name_doesnt_parse() {
+        let text = GROUPS.replace("name = \"contracts\"\n", "");
+        let mut findings = Vec::new();
+        assert!(load(&tree(&text), &mut findings).is_none());
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("name"), "{findings:?}");
     }
 
     #[test]

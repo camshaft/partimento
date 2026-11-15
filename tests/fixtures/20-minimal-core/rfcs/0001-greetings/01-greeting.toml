@@ -5,12 +5,16 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a greeting when it starts."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-002"
 level = "SHOULD"
 polarity = "required"
@@ -19,12 +23,16 @@ conditions = ["EX-0001-001"]
 relations = [{ kind = "implies", target = "EX-0001-003" }]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "SHOULD"
 polarity = "required"
 statement = "The program SHOULD print the date beside the time."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-004"
 level = "MUST"
 polarity = "required"

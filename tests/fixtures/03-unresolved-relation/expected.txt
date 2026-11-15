@@ -1,2 +1,2 @@
-error[relation-target] rfcs/0001-greetings/01-greeting.toml:12: EX-0001-001: no requirement holds the relation's target `EX-0001-009`, and the index doesn't plan RFC 1
-warning[relation-unresolved] rfcs/0001-greetings/01-greeting.toml:19: EX-0001-002: the relation's target `EX-0002-001` is in RFC 2, which the index plans and no file holds yet
+error[relation-target] rfcs/0001-greetings/01-greeting.toml:14: EX-0001-001: no requirement holds the relation's target `EX-0001-009`, and the index doesn't plan RFC 1
+warning[relation-unresolved] rfcs/0001-greetings/01-greeting.toml:23: EX-0001-002: the relation's target `EX-0002-001` is in RFC 2, which the index plans and no file holds yet

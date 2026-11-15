@@ -25,7 +25,7 @@ mod source;
 #[cfg(not(any(feature = "batsat", feature = "varisat")))]
 compile_error!("enable a solver backend: the `batsat` feature or the `varisat` feature");
 
-pub use diff::{Binding, Change, ChangeKind};
+pub use diff::{Binding, Change, ChangeKind, VersionChange};
 
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
@@ -230,6 +230,13 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
 /// fails, the base's first, with its file's path after the tree's side, `base:` or `head:`.
 pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
     diff::changes(base, head)
+}
+
+/// Each contract RFC that both trees hold whose `contract_version` differs from `base` to `head`,
+/// in the order of its number; or, where either tree fails a format rule, each finding that
+/// fails, as [`diff`] returns them.
+pub fn contract_versions(base: &Tree, head: &Tree) -> Result<Vec<VersionChange>, Vec<Finding>> {
+    diff::contract_versions(base, head)
 }
 
 /// Renders the tree's generated files: the text of each section and one requirement file for each

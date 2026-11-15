@@ -58,7 +58,8 @@ const KEY_CASES: &[&str] = &[
 const RANGE_CASES: &[&str] = &[
     "system = [{ name = 'a', first = 9, last = 1 }]",
     "system = [{ name = 'a', first = 1, last = 9 }, { name = 'b', first = 5, last = 15 }]",
-    "system = [{ name = 'a', first = 1, last = 9 }]\ncontracts = { first = 5, last = 19 }",
+    "system = [{ name = 'a', first = 1, last = 9 }]\n\
+     contracts = { name = 'c', first = 5, last = 19 }",
 ];
 
 /// The finding of each case of `KEY_CASES`, and then of each case of `RANGE_CASES`.
@@ -135,11 +136,11 @@ fn each_identifier_and_field_finding_is_at_its_place() {
     let (meta, broken) = (FILES[2].0, FILES[4].0);
     let expected: [Place; 8] = [
         ("field-value", broken, 6, None),
-        ("identifier-form", broken, 9, Some("EX-1-1")),
-        ("identifier-retired", broken, 15, Some("EX-0001-003")),
-        ("field-missing", broken, 20, Some("EX-0001-004")),
-        ("field-value", broken, 27, Some("EX-0001-005")),
-        ("field-value", broken, 30, Some("EX-0001-005")),
+        ("identifier-form", broken, 11, Some("EX-1-1")),
+        ("identifier-retired", broken, 19, Some("EX-0001-003")),
+        ("field-missing", broken, 24, Some("EX-0001-004")),
+        ("field-value", broken, 35, Some("EX-0001-005")),
+        ("field-value", broken, 38, Some("EX-0001-005")),
         ("identifier-retired", meta, 7, Some("EX-0002-001")),
         ("identifier-form", meta, 8, Some("EX-9")),
     ];

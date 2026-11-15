@@ -70,6 +70,19 @@ const FIXTURES: &[Fixture] = &[
         "rfcs/0002-farewells/rfc.toml",
         "rfcs/0002-farewells/01-farewell.toml"
     ),
+    fixture!("36-parameter-types"),
+    fixture!(
+        "37-groups-and-versions",
+        "rfcs/0002-farewells/rfc.toml",
+        "rfcs/0003-replies/rfc.toml",
+        "rfcs/0100-transfer/rfc.toml",
+        "rfcs/0100-transfer/01-transfer.toml",
+        "rfcs/0101-handoff/rfc.toml",
+        "rfcs/0102-relay/rfc.toml",
+        "rfcs/0900-base/rfc.toml"
+    ),
+    fixture!("38-permissive-level"),
+    fixture!("39-binding-and-rationale"),
 ];
 
 /// The listed fixture of that name.
@@ -197,10 +210,12 @@ motivation = "The formula constrains the other requirements."
 
 [[requirement]]
 id = "EX-0001-009"
-level = "MAY"
+level = "SHOULD"
 polarity = "required"
-statement = "The program MAY print the time."
+statement = "The program SHOULD print the time."
 logic = ["FORMULA"]
+binds_to = "system"
+rationale = "The tests need this requirement."
 "#;
 
 /// The fixture's tree with a second section file, at [`EXTRA_PATH`], whose requirement holds
@@ -219,7 +234,7 @@ fn exactly_one_fails_where_other_formulas_force_both_parts() {
     let tree = with_formula(fixture, "EX-0001-002 & EX-0001-003");
     // The pairwise exclusion at the `compose` line and the extra formula.
     let expected = [
-        ("unsatisfiable", GREETING, 12),
+        ("unsatisfiable", GREETING, 14),
         ("unsatisfiable", EXTRA_PATH, 12),
     ];
     for (backend, check) in backends() {
@@ -235,7 +250,7 @@ fn an_unless_forces_its_requirement_only_where_its_exception_is_false() {
     // Where the exception is false, the requirement holds: denying both fails.
     let tree = with_formula(fixture, "!EX-0001-001 & !EX-0001-002");
     let expected = [
-        ("unsatisfiable", GREETING, 12),
+        ("unsatisfiable", GREETING, 14),
         ("unsatisfiable", EXTRA_PATH, 12),
     ];
     for (backend, check) in backends() {
@@ -266,9 +281,9 @@ fn drift_is_checked_where_the_format_rules_pass_and_a_check_fails() {
     let mut sources = tree(fixture);
     sources.files.extend(generated.files);
     let conflict = [
-        ("unsatisfiable", GREETING, 8),
-        ("unsatisfiable", GREETING, 12),
-        ("unsatisfiable", GREETING, 15),
+        ("unsatisfiable", GREETING, 10),
+        ("unsatisfiable", GREETING, 14),
+        ("unsatisfiable", GREETING, 19),
     ];
     // The section's text left out, and a requirement file edited by hand.
     let mut missing = sources.clone();
@@ -295,7 +310,7 @@ fn drift_is_checked_where_the_format_rules_pass_and_a_check_fails() {
 const STREAMS_PATH: &str = "rfcs/0001-greetings/02-streams.toml";
 
 /// A section file whose requirement EX-0001-004, at line 8, is forbidden at MUST and leads to
-/// EX-0001-001; whose EX-0001-005 and EX-0001-006, at lines 15 and 22, are required at MUST and
+/// EX-0001-001; whose EX-0001-005 and EX-0001-006, at lines 17 and 26, are required at MUST and
 /// lead to each other, and through EX-0001-006 to EX-0001-004 and EX-0001-008; whose
 /// EX-0001-007 is required at SHOULD and leads to EX-0001-004; and whose EX-0001-008 is
 /// forbidden at SHOULD.
@@ -311,6 +326,8 @@ level = "MUST"
 polarity = "forbidden"
 statement = "The program MUST NOT print a log line to the output stream."
 relations = [{ kind = "depends_on", target = "EX-0001-001" }]
+binds_to = "system"
+rationale = "The tests need this requirement."
 
 [[requirement]]
 id = "EX-0001-005"
@@ -318,6 +335,8 @@ level = "MUST"
 polarity = "required"
 statement = "The program MUST print each log line to the log file."
 relations = [{ kind = "depends_on", target = "EX-0001-006" }]
+binds_to = "system"
+rationale = "The tests need this requirement."
 
 [[requirement]]
 id = "EX-0001-006"
@@ -329,6 +348,8 @@ relations = [
   { kind = "depends_on", target = "EX-0001-004" },
   { kind = "depends_on", target = "EX-0001-008" },
 ]
+binds_to = "system"
+rationale = "The tests need this requirement."
 
 [[requirement]]
 id = "EX-0001-007"
@@ -336,12 +357,16 @@ level = "SHOULD"
 polarity = "required"
 statement = "The program SHOULD print the time on each log line."
 relations = [{ kind = "depends_on", target = "EX-0001-004" }]
+binds_to = "system"
+rationale = "The tests need this requirement."
 
 [[requirement]]
 id = "EX-0001-008"
 level = "SHOULD"
 polarity = "forbidden"
 statement = "The program SHOULD NOT print a blank log line."
+binds_to = "system"
+rationale = "The tests need this requirement."
 "#;
 
 #[test]
@@ -362,12 +387,12 @@ fn a_polarity_conflict_is_found_once_for_each_pair() {
         )
     };
     let expected = [
-        lead(GREETING, 8, "EX-0001-001", "EX-0001-003"),
-        lead(GREETING, 15, "EX-0001-002", "EX-0001-003"),
-        lead(STREAMS_PATH, 15, "EX-0001-005", "EX-0001-003"),
-        lead(STREAMS_PATH, 15, "EX-0001-005", "EX-0001-004"),
-        lead(STREAMS_PATH, 22, "EX-0001-006", "EX-0001-003"),
-        lead(STREAMS_PATH, 22, "EX-0001-006", "EX-0001-004"),
+        lead(GREETING, 10, "EX-0001-001", "EX-0001-003"),
+        lead(GREETING, 19, "EX-0001-002", "EX-0001-003"),
+        lead(STREAMS_PATH, 17, "EX-0001-005", "EX-0001-003"),
+        lead(STREAMS_PATH, 17, "EX-0001-005", "EX-0001-004"),
+        lead(STREAMS_PATH, 26, "EX-0001-006", "EX-0001-003"),
+        lead(STREAMS_PATH, 26, "EX-0001-006", "EX-0001-004"),
     ]
     .concat();
     for (backend, check) in backends() {

@@ -5,12 +5,16 @@ problem = "A person doesn't know when the program runs its jobs."
 motivation = "A schedule tells the person when each job runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0200-001"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST run each job at its scheduled time."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0200-002"
 level = "MAY"
 polarity = "required"

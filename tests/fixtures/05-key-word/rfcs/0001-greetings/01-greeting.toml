@@ -5,30 +5,40 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
 statement = "The program SHOULD print a greeting when it starts."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-002"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print the greeting once, and it MAY print it in color."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MUST"
 polarity = "forbidden"
 statement = "The program MUST NOT print a greeting to the error stream."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-004"
 level = "MUST"
 polarity = "forbidden"
 statement = "The program MUST print a greeting to the output stream."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-005"
 level = "SHOULD"
 polarity = "required"

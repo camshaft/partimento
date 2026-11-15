@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use toml::Value;
 
 use crate::config::Config;
-use crate::model::{Block, Field, Section, Set};
+use crate::model::{Block, Field, Section, Set, INDEX};
 use crate::Finding;
 
 /// An identifier that isn't of the form `<prefix>-<rfc>-<n>`.
@@ -37,6 +37,14 @@ pub const TITLE_FORM: &str = "title-form";
 pub const IMPLEMENTATION_TERM: &str = "implementation-term";
 /// A relation whose target no requirement holds yet; `Options::final_pass` makes it fail.
 pub const RELATION_UNRESOLVED: &str = "relation-unresolved";
+/// An RFC's area, in the index or in its rfc.toml, that isn't the name of a group of
+/// spec.toml, or whose group doesn't hold the RFC's number.
+pub const AREA: &str = "area";
+/// An rfc.toml whose title or area isn't the one its row of the index lists.
+pub const INDEX_AGREEMENT: &str = "index-agreement";
+/// A contract's RFC without `contract_version`, a `contract_version` below 1, or one that an
+/// RFC outside the contracts holds.
+pub const CONTRACT_VERSION: &str = "contract-version";
 
 const REQUIREMENT_FIELDS: &[&str] = &[
     "id",
@@ -53,7 +61,14 @@ const REQUIREMENT_FIELDS: &[&str] = &[
     "binds_to",
     "rationale",
 ];
-const REQUIRED_REQUIREMENT_FIELDS: &[&str] = &["id", "level", "polarity", "statement"];
+const REQUIRED_REQUIREMENT_FIELDS: &[&str] = &[
+    "id",
+    "level",
+    "polarity",
+    "statement",
+    "binds_to",
+    "rationale",
+];
 const SECTION_FIELDS: &[&str] = &["anchor", "title", "problem", "motivation", "prose"];
 const REQUIRED_SECTION_FIELDS: &[&str] = &["anchor", "title", "problem", "motivation"];
 const POLARITIES: &[&str] = &["required", "forbidden"];
@@ -96,6 +111,7 @@ impl Place<'_, '_> {
 
 /// Adds a finding for each format rule that the set breaks.
 pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
+    check_rfcs(config, set, findings);
     let mut cx = Context {
         config,
         levels: config.levels.iter().map(String::as_str).collect(),
@@ -173,6 +189,88 @@ fn check_section(section: &Section, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Adds a finding for each RFC whose area isn't the name of a group that holds its number, whose
+/// rfc.toml disagrees with its row of the index, or whose `contract_version` breaks its rule.
+fn check_rfcs(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
+    let index_file = format!("{}/{INDEX}", config.paths.rfcs);
+    let mut rows = BTreeMap::new();
+    if let Some(index) = &set.index {
+        for entry in &index.rfc {
+            if let Some(message) = area_problem(config, &entry.area, entry.number) {
+                findings.push(Finding::error(
+                    AREA,
+                    &index_file,
+                    entry.area_line,
+                    None,
+                    message,
+                ));
+            }
+            rows.entry(entry.number).or_insert(entry);
+        }
+    }
+    for rfc in &set.rfcs {
+        let Some(meta) = &rfc.meta else {
+            continue;
+        };
+        let number = rfc.number;
+        let mut place = Place {
+            findings,
+            file: rfc.meta_file.as_str(),
+            requirement: None,
+        };
+        if let Some(message) = area_problem(config, &meta.area, number) {
+            place.error(AREA, meta.area_line, message);
+        }
+        if let Some(row) = rows.get(&number) {
+            let (title, listed) = (&meta.title, &row.title);
+            if title != listed {
+                let message = format!("the title is `{title}`, and the index lists `{listed}`");
+                place.error(INDEX_AGREEMENT, meta.title_line, message);
+            }
+            let (area, listed) = (&meta.area, &row.area);
+            if area != listed {
+                let message = format!("the area is `{area}`, and the index lists `{listed}`");
+                place.error(INDEX_AGREEMENT, meta.area_line, message);
+            }
+        }
+        let contract = config.is_contract(number);
+        match &meta.contract_version {
+            None if contract => {
+                let message = format!("RFC {number}, a contract, doesn't hold `contract_version`");
+                place.error(CONTRACT_VERSION, meta.number_line, message);
+            }
+            Some(version) if !contract => {
+                let message = "only a contract's RFC holds `contract_version`".to_string();
+                place.error(CONTRACT_VERSION, version.line, message);
+            }
+            Some(version) if version.value < 1 => {
+                let value = version.value;
+                let message = format!("`contract_version` is 1 or more, and {value} isn't");
+                place.error(CONTRACT_VERSION, version.line, message);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// What is wrong with an RFC's area: it isn't the name of a group, or its group doesn't hold
+/// the RFC's number.
+fn area_problem(config: &Config, area: &str, number: u32) -> Option<String> {
+    let Some(group) = config.group(area) else {
+        return Some(format!(
+            "the area `{area}` isn't the name of a group of spec.toml"
+        ));
+    };
+    let range = group.rfcs;
+    if range.contains(number) {
+        return None;
+    }
+    let (first, last) = (range.first, range.last);
+    Some(format!(
+        "RFC {number} is outside group `{area}`, which holds RFCs {first} to {last}"
+    ))
+}
+
 fn check_block<'a>(
     cx: &mut Context<'a>,
     section: &'a Section,
@@ -201,6 +299,10 @@ fn check_block<'a>(
             let message = format!("the requirement block doesn't hold `{key}`");
             place.error(FIELD_MISSING, block.line, message);
         }
+    }
+    let rationale = block.field("rationale");
+    if let Some(field) = rationale.filter(|field| is_blank(&field.value)) {
+        place.error(FIELD_VALUE, field.line, "`rationale` is empty".to_string());
     }
 
     if let Some(field) = block.field("id") {

@@ -44,8 +44,14 @@ pub struct Index {
 #[derive(Clone, Debug)]
 pub struct IndexEntry {
     pub number: u32,
+    /// The line of the row's `number`.
+    pub line: u32,
     pub title: String,
+    /// The line of the row's `title`.
+    pub title_line: u32,
     pub area: String,
+    /// The line of the row's `area`.
+    pub area_line: u32,
     /// The state the row still stores, where it stores one. The check doesn't read it, since
     /// the RFC's directory decides whether the RFC is written.
     pub state: Option<Located<State>>,
@@ -85,13 +91,22 @@ pub struct Located<T> {
 #[derive(Clone, Debug)]
 pub struct Meta {
     pub number: u32,
+    /// The line of its `number`.
+    pub number_line: u32,
     pub title: String,
+    /// The line of its `title`.
+    pub title_line: u32,
     pub area: String,
+    /// The line of its `area`.
+    pub area_line: u32,
     /// The RFC's abstract.
     pub summary: String,
     pub sources: Vec<Source>,
     /// The identifiers the RFC no longer holds, which no requirement uses again.
     pub retired: Vec<Located<String>>,
+    /// The version of the contract that a contract's RFC states, where its rfc.toml holds
+    /// `contract_version`.
+    pub contract_version: Option<Located<i64>>,
 }
 
 /// A source of an RFC: a design by reference and version, or an earlier file by path and commit.
@@ -172,14 +187,16 @@ struct RawSection {
 #[serde(deny_unknown_fields)]
 struct RawMeta {
     number: Spanned<u32>,
-    title: String,
-    area: String,
+    title: Spanned<String>,
+    area: Spanned<String>,
     #[serde(rename = "abstract")]
     summary: String,
     #[serde(default)]
     sources: Vec<Source>,
     #[serde(default)]
     retired: Vec<Spanned<String>>,
+    #[serde(default)]
+    contract_version: Option<Spanned<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -192,9 +209,9 @@ struct RawIndex {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawEntry {
-    number: u32,
-    title: String,
-    area: String,
+    number: Spanned<u32>,
+    title: Spanned<String>,
+    area: Spanned<String>,
     #[serde(default)]
     state: Option<Spanned<State>>,
 }
@@ -297,8 +314,8 @@ fn load_index(file: &str, text: &str, findings: &mut Vec<Finding>) -> Option<Ind
             line: lines.line(state.span().start),
             value: state.into_inner(),
         });
+        let number = *entry.number.get_ref();
         if let Some(state) = &state {
-            let number = entry.number;
             let message = format!(
                 "RFC {number}'s state follows from its directory, so the row can leave out `state`"
             );
@@ -311,9 +328,12 @@ fn load_index(file: &str, text: &str, findings: &mut Vec<Finding>) -> Option<Ind
             ));
         }
         index.rfc.push(IndexEntry {
-            number: entry.number,
-            title: entry.title,
-            area: entry.area,
+            number,
+            line: lines.line(entry.number.span().start),
+            title_line: lines.line(entry.title.span().start),
+            title: entry.title.into_inner(),
+            area_line: lines.line(entry.area.span().start),
+            area: entry.area.into_inner(),
             state,
         });
     }
@@ -373,13 +393,21 @@ fn load_meta(
             value: id.into_inner(),
         })
         .collect();
+    let contract_version = raw.contract_version.map(|version| Located {
+        line: line(version.span()),
+        value: version.into_inner(),
+    });
     Some(Meta {
         number: held,
-        title: raw.title,
-        area: raw.area,
+        number_line: line(raw.number.span()),
+        title_line: line(raw.title.span()),
+        title: raw.title.into_inner(),
+        area_line: line(raw.area.span()),
+        area: raw.area.into_inner(),
         summary: raw.summary,
         sources: raw.sources,
         retired,
+        contract_version,
     })
 }
 

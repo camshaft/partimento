@@ -1,1 +1,1 @@
-error[identifier-unique] rfcs/0001-greetings/02-farewell.toml:8: EX-0001-001: rfcs/0001-greetings/01-greeting.toml:8 holds the identifier too
+error[identifier-unique] rfcs/0001-greetings/02-farewell.toml:10: EX-0001-001: rfcs/0001-greetings/01-greeting.toml:10 holds the identifier too

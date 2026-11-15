@@ -1,0 +1,35 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it starts."
+
+[[requirement]]
+binds_to = "everyone"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the person's name in the greeting."
+
+[[requirement]]
+binds_to = "system"
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the greeting on one line."
+
+[[requirement]]
+binds_to = "system"
+rationale = " "
+id = "EX-0001-004"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST end the greeting with a period."

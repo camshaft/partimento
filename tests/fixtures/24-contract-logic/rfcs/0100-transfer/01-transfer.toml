@@ -5,6 +5,8 @@ problem = "A person doesn't know which job the greeting starts."
 motivation = "A transfer tells the person that the greeting starts the scheduled job."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0100-001"
 level = "MUST"
 polarity = "required"
@@ -12,6 +14,8 @@ statement = "The program MUST run the scheduled job when it prints a greeting."
 logic = ["EX-0001-001 -> EX-0200-001"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0100-002"
 level = "MUST"
 polarity = "required"

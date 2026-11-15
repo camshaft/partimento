@@ -6,6 +6,8 @@ motivation = "A greeting tells the person that the program runs."
 owner = "core"
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
