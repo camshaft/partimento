@@ -5,6 +5,8 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
@@ -13,6 +15,8 @@ compose = "any_of"
 parts = ["EX-0001-002", "EX-0001-009"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-002"
 level = "SHOULD"
 polarity = "required"
@@ -20,6 +24,8 @@ statement = "The program SHOULD print a greeting when the person asked for a far
 conditions = ["EX-0002-001"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MAY"
 polarity = "required"
@@ -27,6 +33,8 @@ statement = "The program MAY print the time beside the greeting."
 logic = ["EX-0001-003 -> EX-0001-008"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-004"
 level = "MUST"
 polarity = "required"

@@ -5,15 +5,19 @@ problem = "A person who stops the program doesn't know that it stopped."
 motivation = "A farewell tells the person that the program stopped."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0002-001"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a farewell of at least 100 characters."
-params = [{ name = "line.length", bound = "min", value = 100 }]
+params = [{ name = "line.length", bound = "min", type = "count", value = 100 }]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0002-002"
 level = "MAY"
 polarity = "required"
 statement = "The program MAY wait 3 seconds before it prints the farewell."
-params = [{ name = "line.delay", bound = "exact", value = 3 }]
+params = [{ name = "line.delay", bound = "exact", type = "duration", unit = "s", value = 3 }]

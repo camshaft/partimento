@@ -5,6 +5,8 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-001"
 level = "MUST"
 polarity = "required"
@@ -13,6 +15,8 @@ compose = "all_of"
 logic = ["EX-0001-002 &"]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-002"
 level = "SHOULD"
 polarity = "required"
@@ -22,6 +26,8 @@ parts = ["EX-0001-001", "EX-0001-003"]
 relations = [{ kind = "follows", target = "EX-0001-001" }, { target = "EX-0001-003" }]
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MAY"
 polarity = "required"

@@ -1,4 +1,4 @@
-error[relation-target] rfcs/0001-greetings/01-greeting.toml:13: EX-0001-001: no requirement holds the part `EX-0001-009`, and the index doesn't plan RFC 1
-warning[relation-unresolved] rfcs/0001-greetings/01-greeting.toml:20: EX-0001-002: the condition `EX-0002-001` is in RFC 2, which the index plans and no file holds yet
-error[relation-target] rfcs/0001-greetings/01-greeting.toml:27: EX-0001-003: no requirement holds the formula's atom `EX-0001-008`, and the index doesn't plan RFC 1
-error[relation-target] rfcs/0001-greetings/01-greeting.toml:35: EX-0001-004: no requirement holds the exception `EX-0001-007`, and the index doesn't plan RFC 1
+error[relation-target] rfcs/0001-greetings/01-greeting.toml:15: EX-0001-001: no requirement holds the part `EX-0001-009`, and the index doesn't plan RFC 1
+warning[relation-unresolved] rfcs/0001-greetings/01-greeting.toml:24: EX-0001-002: the condition `EX-0002-001` is in RFC 2, which the index plans and no file holds yet
+error[relation-target] rfcs/0001-greetings/01-greeting.toml:33: EX-0001-003: no requirement holds the formula's atom `EX-0001-008`, and the index doesn't plan RFC 1
+error[relation-target] rfcs/0001-greetings/01-greeting.toml:43: EX-0001-004: no requirement holds the exception `EX-0001-007`, and the index doesn't plan RFC 1

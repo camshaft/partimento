@@ -1,2 +1,2 @@
-error[relation] rfcs/0001-greetings/01-greeting.toml:12: EX-0001-001: `supersedes` relations form a cycle through `EX-0001-001`, `EX-0001-002`, so each of them is retired and nothing replaces them
-error[relation] rfcs/0001-greetings/01-greeting.toml:19: EX-0001-002: `supersedes` relations form a cycle through `EX-0001-001`, `EX-0001-002`, so each of them is retired and nothing replaces them
+error[relation] rfcs/0001-greetings/01-greeting.toml:14: EX-0001-001: `supersedes` relations form a cycle through `EX-0001-001`, `EX-0001-002`, so each of them is retired and nothing replaces them
+error[relation] rfcs/0001-greetings/01-greeting.toml:23: EX-0001-002: `supersedes` relations form a cycle through `EX-0001-001`, `EX-0001-002`, so each of them is retired and nothing replaces them
