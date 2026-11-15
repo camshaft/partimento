@@ -1,0 +1,12 @@
+error[registry] rfcs/0001-greetings/01-greeting.toml:19: the kind `a wave` has format 1, and the registry `registry/identifiers.toml` doesn't hold an entry of identifies `a wave` and format 1
+error[kind] rfcs/0001-greetings/01-greeting.toml:20: the kind table holds `status`, and a kind table holds only name and formats
+error[kind] rfcs/0001-greetings/01-greeting.toml:23: the kind table doesn't hold `formats`
+error[kind] rfcs/0001-greetings/01-greeting.toml:27: the kind table doesn't hold `name`
+error[kind] rfcs/0001-greetings/01-greeting.toml:32: name is an integer, which isn't a text
+error[kind] rfcs/0001-greetings/01-greeting.toml:37: the kind table at rfcs/0001-greetings/01-greeting.toml:8 holds the name `a greeting` too
+error[kind] rfcs/0001-greetings/01-greeting.toml:43: formats is an integer, which isn't a list of whole numbers
+error[kind] rfcs/0001-greetings/01-greeting.toml:48: formats is an empty list, and a kind has one or more formats
+error[kind] rfcs/0001-greetings/01-greeting.toml:53: formats holds 0, which is less than 1
+error[kind] rfcs/0001-greetings/01-greeting.toml:53: formats holds 2 twice
+error[kind] rfcs/0001-greetings/01-greeting.toml:53: formats holds a text, which isn't a whole number
+error[registry] rfcs/0001-greetings/01-greeting.toml:53: the kind `a hug` has format 2, and the registry `registry/identifiers.toml` doesn't hold an entry of identifies `a hug` and format 2

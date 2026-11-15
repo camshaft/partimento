@@ -4,8 +4,14 @@
 //! entry yet is a file of comment lines alone, and a set whose spec.toml doesn't set
 //! `paths.registry` doesn't hold a registry.
 //!
-//! [`check`] reads one tree's registry against the requirements of its RFCs, and [`kept`] reads a
-//! change of the set, from a base tree to a head tree, for an entry it removes or alters.
+//! A section that specifies a kind of self-describing identifier names it in a `[[kind]]` table
+//! of its section file, whose `name` is the identifies of the kind's entries and whose `formats`
+//! lists the number of each form of the kind's identifier, so the registry holds an entry of each
+//! format of each kind table.
+//!
+//! [`check`] reads one tree's registry against the requirements and the kind tables of its RFCs,
+//! and [`kept`] reads a change of the set, from a base tree to a head tree, for an entry it
+//! removes or alters.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -17,12 +23,22 @@ use crate::config::Config;
 use crate::model::Set;
 use crate::{source, ByteVec, Finding, Tree};
 
-/// The rule of a registry that is missing or whose entry breaks a rule of its fields.
+/// The rule of a registry that is missing or whose entry breaks a rule of its fields, or that
+/// doesn't hold an entry of a format of a kind table.
 pub const RULE: &str = "registry";
 
 /// The rule of a change of the set that removes an entry of the registry, or changes its code,
 /// identifies, format or body_length.
 pub const KEPT: &str = "registry-kept";
+
+/// The rule of a kind table that breaks a rule of its fields, or whose name an earlier kind table
+/// holds.
+pub const KIND: &str = "kind";
+
+/// The fields of a kind table: it holds both, and no other.
+const KIND_FIELDS: &[&str] = &["name", "formats"];
+
+const KIND_UNKNOWN_MESSAGE: &str = "a kind table holds only name and formats";
 
 /// The fields of an entry: each entry holds each of them, and no other.
 const FIELDS: &[&str] = &["code", "identifies", "format", "body_length", "defined_by"];
@@ -73,9 +89,23 @@ impl Entry {
 }
 
 /// Checks the registry that spec.toml locates, where it locates one, against the requirements of
-/// the set, adding a finding for each rule the file breaks.
+/// the set, adding a finding for each rule the file breaks; and checks the fields of each kind
+/// table of the set's section files, and that the registry holds an entry of each format of each
+/// kind table, with the table's name as its identifies. Where spec.toml doesn't locate a
+/// registry, the set doesn't hold an entry, so each format of each kind table fails.
 pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding>) {
+    let tables = kinds(set, findings);
     let Some(file) = config.paths.registry.as_deref() else {
+        for table in &tables {
+            let name = table.name;
+            for format in &table.formats {
+                let message = format!(
+                    "the kind `{name}` has format {format}, and spec.toml doesn't set \
+                     `paths.registry`, so the set doesn't hold a registry entry of it"
+                );
+                findings.push(Finding::error(RULE, table.file, table.line, None, message));
+            }
+        }
         return;
     };
     let Some(bytes) = tree.files.get(file) else {
@@ -120,6 +150,19 @@ pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding
                     kinds.insert(kind, entry.line);
                 }
             }
+        }
+    }
+    for table in &tables {
+        let name = table.name;
+        for &format in &table.formats {
+            if kinds.contains_key(&(name, format)) {
+                continue;
+            }
+            let message = format!(
+                "the kind `{name}` has format {format}, and the registry `{file}` doesn't hold \
+                 an entry of identifies `{name}` and format {format}"
+            );
+            findings.push(Finding::error(RULE, table.file, table.line, None, message));
         }
     }
 }
@@ -228,6 +271,110 @@ impl<'a> Identifiers<'a> {
         let retired = retired.map(|id| id.value.as_str()).collect();
         Identifiers { held, retired }
     }
+}
+
+/// One kind table of a section file whose name is a text: a kind of self-describing identifier
+/// that the section specifies, which a registry entry's identifies names.
+struct Kind<'a> {
+    /// The section file that holds the table.
+    file: &'a str,
+    /// The line of its `formats`, or of its `[[kind]]` header where it doesn't hold `formats`.
+    line: u32,
+    name: &'a str,
+    /// Each number of its formats that is a whole number of at least 1, once, in the order of
+    /// the list.
+    formats: Vec<i64>,
+}
+
+/// The kind tables of the set's section files whose name is a text that no earlier kind table
+/// holds, in the order of the files, adding a finding with the rule `kind` for each rule a kind
+/// table breaks: a field other than name and formats, or a missing one; a name that isn't a text,
+/// or that an earlier kind table holds; and formats that aren't a list of one or more whole
+/// numbers of at least 1, or that hold one number twice.
+fn kinds<'a>(set: &'a Set, findings: &mut Vec<Finding>) -> Vec<Kind<'a>> {
+    let mut tables: Vec<Kind<'a>> = Vec::new();
+    let mut names: BTreeMap<&str, (&str, u32)> = BTreeMap::new();
+    for section in set.rfcs.iter().flat_map(|rfc| &rfc.sections) {
+        let file = section.file.as_str();
+        for table in &section.kinds {
+            let mut error = |line: u32, message: String| {
+                findings.push(Finding::error(KIND, file, line, None, message));
+            };
+            for field in &table.fields {
+                if !KIND_FIELDS.contains(&field.key.as_str()) {
+                    let key = &field.key;
+                    error(
+                        field.line,
+                        format!("the kind table holds `{key}`, and {KIND_UNKNOWN_MESSAGE}"),
+                    );
+                }
+            }
+            for key in KIND_FIELDS {
+                if table.field(key).is_none() {
+                    error(table.line, format!("the kind table doesn't hold `{key}`"));
+                }
+            }
+            let formats = table.field("formats").map(|field| {
+                let (formats, problems) = formats_of(&field.value);
+                for message in problems {
+                    error(field.line, message);
+                }
+                (field.line, formats)
+            });
+            let Some(field) = table.field("name") else {
+                continue;
+            };
+            let Some(name) = field.value.as_str() else {
+                let kind = kind(&field.value);
+                error(field.line, format!("name is {kind}, which isn't a text"));
+                continue;
+            };
+            if let Some((first, line)) = names.get(name) {
+                let message =
+                    format!("the kind table at {first}:{line} holds the name `{name}` too");
+                error(field.line, message);
+                continue;
+            }
+            names.insert(name, (file, table.line));
+            let (line, formats) = formats.unwrap_or((table.line, Vec::new()));
+            tables.push(Kind {
+                file,
+                line,
+                name,
+                formats,
+            });
+        }
+    }
+    tables
+}
+
+/// The formats of a kind table that are whole numbers of at least 1, once each, and what its
+/// `formats` breaks: it is a list of one or more whole numbers of at least 1, none of them twice.
+fn formats_of(value: &Value) -> (Vec<i64>, Vec<String>) {
+    let Some(items) = value.as_array() else {
+        let kind = kind(value);
+        let message = format!("formats is {kind}, which isn't a list of whole numbers");
+        return (Vec::new(), vec![message]);
+    };
+    if items.is_empty() {
+        let message = "formats is an empty list, and a kind has one or more formats".to_string();
+        return (Vec::new(), vec![message]);
+    }
+    let mut formats = Vec::new();
+    let mut problems = Vec::new();
+    for item in items {
+        let problem = match item.as_integer() {
+            Some(format) if formats.contains(&format) => format!("formats holds {format} twice"),
+            Some(format) if format >= 1 => {
+                formats.push(format);
+                continue;
+            }
+            Some(format) => format!("formats holds {format}, which is less than 1"),
+            None => format!("formats holds {}, which isn't a whole number", kind(item)),
+        };
+        problems.push(problem);
+    }
+    (formats, problems)
 }
 
 /// Checks one entry's fields: each of the five and no other, and the form of each.

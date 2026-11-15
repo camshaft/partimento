@@ -159,6 +159,20 @@ rationale = "A person who reads the error stream reads only the errors."
 A section needs `anchor`, `title`, `problem` and `motivation`, and may hold `prose`. The anchor
 holds ASCII letters, digits, `-` and `_`, and the title is one line.
 
+A section that specifies a kind of self-describing identifier names it in a `[[kind]]` table
+beside its requirements:
+
+```toml
+[[kind]]
+name = "a greeting"
+formats = [1, 2]
+```
+
+A kind table holds `name` and `formats`, and no other field. `name` is a text that no other kind
+table of the set holds, the name the RFC uses for the kind of record, and `formats` is a list of
+one or more whole numbers of at least 1, none of them twice: the number of each form of the
+kind's identifier that the RFC specifies.
+
 A requirement needs `id`, `level`, `polarity`, `binds_to`, `statement` and `rationale`.
 `polarity` is `required` or `forbidden`, and the statement's key words match the level and the
 polarity: `MUST` for a required `MUST`, `MUST NOT` for a forbidden one. `binds_to` is `system`,
@@ -214,6 +228,10 @@ least 1 and not greater than `max`. `defined_by` is the identifier of a requirem
 RFC that no RFC retires. A registry that doesn't hold an entry yet is a file of comment lines
 alone.
 
+The registry holds an entry of each format of each kind table, whose `identifies` is the table's
+`name` and whose `format` is that format. A set whose spec.toml doesn't set `paths.registry`
+doesn't hold an entry, so it fails at each format of each kind table it holds.
+
 A change of the set adds entries, and doesn't remove one or change its `code`, `identifies`,
 `format` or `body_length`: `partimento diff` reports each entry of the base that the head
 removes or changes, with the rule `registry-kept`, and exits with 1. Where the head's registry
@@ -240,8 +258,9 @@ the requirement's part. The check runs:
   each statement, the fields of each section and requirement and their values, each parameter's
   type, unit, value and source, the form of each section's anchor and title, each RFC's area and
   `contract_version`, the agreement of `rfc.toml` and the index, and the implementation terms;
-- the registry's rules, where spec.toml sets `paths.registry`: that the file is there, and the
-  fields of each entry and their values;
+- the fields of each kind table and their values, with the rule `kind`;
+- the registry's rules, where spec.toml sets `paths.registry`: that the file is there, the fields
+  of each entry and their values, and that it holds an entry of each format of each kind table;
 - the checks of the requirements: that their formulas hold together, which a SAT solver decides,
   with a smallest set of requirements that can't hold together where they don't; that each
   condition can hold while the rest of the set does; each relation's target; the boundary

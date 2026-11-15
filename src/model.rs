@@ -130,12 +130,16 @@ pub struct Section {
     pub fields: Vec<Field>,
     /// Its `[[requirement]]` blocks, in the order of the file.
     pub requirements: Vec<Block>,
+    /// Its `[[kind]]` tables, in the order of the file: each names a kind of self-describing
+    /// identifier that the section specifies, by its `name`, and the number of each form of that
+    /// kind's identifier, in its `formats`. `registry::check` checks their fields.
+    pub kinds: Vec<Block>,
 }
 
-/// One `[[requirement]]` block of a section file.
+/// One `[[requirement]]` block of a section file, or one of its `[[kind]]` tables.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
-    /// The line of the block's `[[requirement]]` header.
+    /// The line of the block's `[[requirement]]` or `[[kind]]` header.
     pub line: u32,
     /// The block's fields, in the order of their lines.
     pub fields: Vec<Field>,
@@ -181,6 +185,8 @@ struct RawSection {
     section: Option<Spanned<RawTable>>,
     #[serde(default)]
     requirement: Vec<Spanned<RawTable>>,
+    #[serde(default)]
+    kind: Vec<Spanned<RawTable>>,
 }
 
 #[derive(Deserialize)]
@@ -458,19 +464,19 @@ pub(crate) fn load_section(
         Some(table) => (line(table.span()), read_fields(table.into_inner(), &lines)),
         None => (1, Vec::new()),
     };
-    let requirements = raw
-        .requirement
-        .into_iter()
-        .map(|block| Block {
-            line: line(block.span()),
-            fields: read_fields(block.into_inner(), &lines),
-        })
-        .collect();
+    let blocks = |tables: Vec<Spanned<RawTable>>| -> Vec<Block> {
+        let block = |table: Spanned<RawTable>| Block {
+            line: line(table.span()),
+            fields: read_fields(table.into_inner(), &lines),
+        };
+        tables.into_iter().map(block).collect()
+    };
     Some(Section {
         file: file.to_string(),
         line: header,
         fields,
-        requirements,
+        requirements: blocks(raw.requirement),
+        kinds: blocks(raw.kind),
     })
 }
 

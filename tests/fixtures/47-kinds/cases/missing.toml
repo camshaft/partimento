@@ -1,0 +1,8 @@
+# A registry that holds an entry of the first format of `a greeting` alone.
+
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
