@@ -159,6 +159,9 @@ struct Context<'a> {
     contract_params: BTreeSet<&'a str>,
     /// Whether the requirement being built is at the permissive level.
     permissive: bool,
+    /// The index in `set` of each composed `exactly_one`'s exclusion, with the index of the same
+    /// composition's `R <-> (P1 | ... | Pn)`.
+    exclusions: BTreeMap<usize, usize>,
     set: FormulaSet,
     found: Vec<Finding>,
 }
@@ -179,6 +182,7 @@ impl<'a> Context<'a> {
             kinds: BTreeMap::new(),
             contract_params: BTreeSet::new(),
             permissive: false,
+            exclusions: BTreeMap::new(),
             set: FormulaSet::default(),
             found: Vec::new(),
         };
@@ -275,13 +279,15 @@ impl<'a> Context<'a> {
                         "all_of" => all(atoms_of(&parts)),
                         _ => any(atoms_of(&parts)),
                     };
+                    let iff = self.set.formulas.len();
                     self.push(Formula::atom(r.id).iff(body), r, compose_line);
                     if kind == "exactly_one" {
-                        for (i, &first) in parts.iter().enumerate() {
-                            for &second in &parts[i + 1..] {
-                                let pair = vec![Formula::atom(first), Formula::atom(second)];
-                                self.push(Formula::And(pair).not(), r, compose_line);
-                            }
+                        // The exclusion is one formula over every part, whose clauses grow
+                        // linearly in their count, with no bound on it.
+                        let exclusion = Formula::exactly_one(atoms_of(&parts));
+                        self.push(Formula::atom(r.id).implies(exclusion), r, compose_line);
+                        if !self.permissive {
+                            self.exclusions.insert(iff + 1, iff);
                         }
                     }
                 }
@@ -678,25 +684,28 @@ impl<'a> Context<'a> {
     /// Runs checks 1 and 2 over the formula set, or reads their result from `cache`.
     fn solve<B: Backend + Default, C: Cache>(&mut self, cache: &C) {
         let found = cached_consistency::<B, _>(&self.set, cache);
+        let conflict = found.conflict.unwrap_or_default();
+        let shown: Vec<String> = conflict
+            .iter()
+            .map(|&index| self.shown(index, &conflict))
+            .collect();
         let formulas = &self.set.formulas;
-        let place = |entry: &Entry| {
-            let (file, line) = (&entry.origin.file, entry.origin.line);
-            format!("`{}` at {file}:{line}", entry.formula)
-        };
-        for &index in found.conflict.iter().flatten() {
+        for (at, &index) in conflict.iter().enumerate() {
             let entry = &formulas[index];
-            let others: Vec<String> = found
-                .conflict
+            let others: Vec<String> = conflict
                 .iter()
-                .flatten()
-                .filter(|&&other| other != index)
-                .map(|&other| place(&formulas[other]))
+                .enumerate()
+                .filter(|&(other, _)| other != at)
+                .map(|(other, &place)| {
+                    let origin = &formulas[place].origin;
+                    format!("{} at {}:{}", shown[other], origin.file, origin.line)
+                })
                 .collect();
             let message = if others.is_empty() {
-                format!("`{}` can't hold by itself", entry.formula)
+                format!("{} can't hold by itself", shown[at])
             } else {
                 let others = others.join(", ");
-                format!("`{}` can't hold together with {others}", entry.formula)
+                format!("{} can't hold together with {others}", shown[at])
             };
             self.found
                 .push(at_origin(UNSATISFIABLE, &entry.origin, message));
@@ -711,6 +720,37 @@ impl<'a> Context<'a> {
             self.found
                 .push(at_origin(CONDITION_VACUOUS, &condition.origin, message));
         }
+    }
+
+    /// The text that a finding of check 1 shows for the formula at `index`, between backticks.
+    /// A composed `exactly_one`'s exclusion shows, among its parts, each part that a formula of
+    /// `conflict` other than the composition's own two formulas names, and `...` in place of the
+    /// others: a part that none of them names can be false without making the conflict's
+    /// formulas hold together, so it isn't part of the conflict.
+    fn shown(&self, index: usize, conflict: &[usize]) -> String {
+        let formula = &self.set.formulas[index].formula;
+        let iff = self.exclusions.get(&index).copied();
+        let (Some(iff), Formula::Implies(own, body)) = (iff, formula) else {
+            return format!("`{formula}`");
+        };
+        let Formula::ExactlyOne(parts) = &**body else {
+            return format!("`{formula}`");
+        };
+        let mut named = BTreeSet::new();
+        for &other in conflict {
+            if other != index && other != iff {
+                names_of(&self.set.formulas[other].formula, &mut named);
+            }
+        }
+        let mut listed: Vec<String> = parts
+            .iter()
+            .filter(|part| matches!(part, Formula::Atom(name) if named.contains(name)))
+            .map(ToString::to_string)
+            .collect();
+        if listed.len() < parts.len() {
+            listed.push("...".to_owned());
+        }
+        format!("`({own} -> exactly_one({}))`", listed.join(", "))
     }
 
     /// Finds each held requirement that a held requirement's `supersedes` relation retires,
@@ -1163,10 +1203,14 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
 
-    use super::{cached_consistency, consistency, names_of, Consistency};
-    use crate::logic::{parse, Condition, Entry, FormulaSet, Origin};
+    use toml::Value;
+
+    use super::{cached_consistency, check, consistency, names_of, Consistency, UNSATISFIABLE};
+    use crate::config::Config;
+    use crate::logic::{parse, Condition, Encoding, Entry, Formula, FormulaSet, Origin};
+    use crate::model::{Block, Field, Rfc, Section, Set};
     use crate::solver::{Answer, Backend, Lit};
-    use crate::{ByteVec, Cache, Key};
+    use crate::{ByteVec, Cache, Finding, Key, Tree};
 
     fn origin(requirement: &str) -> Origin {
         Origin {
@@ -1311,7 +1355,7 @@ mod tests {
     }
 
     fn condition_vacuous_through_exactly_one<B: Backend + Default>() {
-        let formulas = ["r <-> (p | q)", "!(p & q)", "!p", "!q"];
+        let formulas = ["r <-> (p | q)", "r -> exactly_one(p, q)", "!p", "!q"];
         let found = consistency::<B>(&set(&formulas, &["r", "p"]));
         assert_eq!(found.conflict, None);
         assert_eq!(found.vacuous, vec![0, 1]);
@@ -1377,6 +1421,229 @@ mod tests {
         assert_eq!(cache.0.borrow().len(), 2);
     }
 
+    /// The path of the section file of the sets the tests below build.
+    const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
+
+    /// A configuration of the prefix `EX`, three levels, and one system of RFCs 1 to 99.
+    const SPEC: &str = r#"prefix = "EX"
+levels = ["MUST", "SHOULD", "MAY"]
+
+[paths]
+rfcs = "rfcs"
+rendered = "rendered"
+requirements = "requirements"
+
+[[system]]
+name = "core"
+first = 1
+last = 99
+"#;
+
+    fn config() -> Config {
+        let mut tree = Tree::default();
+        let bytes = ByteVec::from(SPEC.to_owned());
+        tree.files.insert(crate::config::FILE.to_owned(), bytes);
+        let mut findings = Vec::new();
+        let config = crate::config::load(&tree, &mut findings);
+        assert_eq!(findings, []);
+        config.expect("the configuration loads")
+    }
+
+    fn field(key: &str, line: u32, value: Value) -> Field {
+        Field {
+            key: key.to_owned(),
+            line,
+            value,
+        }
+    }
+
+    /// The identifier of RFC 0001's requirement `n`.
+    fn id(n: usize) -> String {
+        format!("EX-0001-{n:03}")
+    }
+
+    /// A set whose section file at [`GREETING`] holds EX-0001-001, which composes `parts`
+    /// requirements under `exactly_one`, with its `id` at line 10 and its `compose` at line 14,
+    /// and the parts, EX-0001-002 on, each a requirement that holds only its `id`, one every 10
+    /// lines from line 20. With `logic`, a last requirement after the parts holds that formula as
+    /// its `logic`, 4 lines below its `id`.
+    fn composed(parts: usize, logic: Option<&str>) -> Set {
+        let names: Vec<Value> = (2..parts + 2).map(|n| Value::String(id(n))).collect();
+        let mut requirements = vec![Block {
+            line: 10,
+            fields: vec![
+                field("id", 10, Value::String(id(1))),
+                field("compose", 14, Value::String("exactly_one".to_owned())),
+                field("parts", 15, Value::Array(names)),
+            ],
+        }];
+        let at = |n: usize| u32::try_from(20 + 10 * n).expect("a line of the file");
+        for n in 0..parts {
+            let fields = vec![field("id", at(n), Value::String(id(n + 2)))];
+            requirements.push(Block {
+                line: at(n),
+                fields,
+            });
+        }
+        if let Some(logic) = logic {
+            let line = at(parts);
+            let formulas = Value::Array(vec![Value::String(logic.to_owned())]);
+            let fields = vec![
+                field("id", line, Value::String(id(parts + 2))),
+                field("logic", line + 4, formulas),
+            ];
+            requirements.push(Block { line, fields });
+        }
+        let section = Section {
+            file: GREETING.to_owned(),
+            line: 1,
+            fields: Vec::new(),
+            requirements,
+            kinds: Vec::new(),
+        };
+        let rfc = Rfc {
+            dir: "rfcs/0001-greetings".to_owned(),
+            meta_file: "rfcs/0001-greetings/rfc.toml".to_owned(),
+            number: 1,
+            meta: None,
+            sections: vec![section],
+        };
+        Set {
+            index: None,
+            rfcs: vec![rfc],
+        }
+    }
+
+    thread_local! {
+        static CLAUSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// A backend that counts the clauses it is given on the thread that runs it.
+    struct Clauses<B>(B);
+
+    impl<B: Backend> Backend for Clauses<B> {
+        fn new_var(&mut self) -> Lit {
+            self.0.new_var()
+        }
+
+        fn add_clause(&mut self, clause: &[Lit]) {
+            CLAUSES.with(|count| count.set(count.get() + 1));
+            self.0.add_clause(clause);
+        }
+
+        fn solve(&mut self, assumptions: &[Lit]) -> Answer {
+            self.0.solve(assumptions)
+        }
+    }
+
+    /// Whether the formulas of `selectors` hold together with each atom of `atoms` at its value.
+    fn holds<B: Backend>(
+        encoding: &mut Encoding<B>,
+        selectors: &[Lit],
+        atoms: &[(&str, bool)],
+    ) -> bool {
+        let mut assumptions = selectors.to_vec();
+        for &(name, value) in atoms {
+            let lit = encoding.atom_lit(name).expect("an atom of the set");
+            assumptions.push(if value { lit } else { !lit });
+        }
+        matches!(encoding.solve(&assumptions), Answer::Sat)
+    }
+
+    /// Each atom of `names`, true where its index is in `true_at` and false elsewhere.
+    fn assume<'a>(names: &'a [String], true_at: &[usize]) -> Vec<(&'a str, bool)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(at, name)| (name.as_str(), true_at.contains(&at)))
+            .collect()
+    }
+
+    /// The number of parts of the wide composition.
+    const PARTS: usize = 100_000;
+
+    /// A composition of 100,000 parts under `exactly_one` adds three formulas, each of
+    /// EX-0001-001: the requirement at its `id` line, and at its `compose` line its `<->` over
+    /// the parts and its exclusion, in clauses linear in the parts. They hold where exactly one
+    /// part is true, and don't where two parts or none are. Without the requirement's own
+    /// formula, they hold where it and every part are false, and don't where it is false and a
+    /// part is true.
+    fn wide_composition<B: Backend + Default>() {
+        let mut findings = Vec::new();
+        let formula_set = check::<B>(&config(), &composed(PARTS, None), &mut findings);
+        assert_eq!(findings, []);
+        let own = id(1);
+        let parts: Vec<String> = (2..PARTS + 2).map(id).collect();
+        let atoms = || parts.iter().map(Formula::atom).collect::<Vec<_>>();
+        let expected = [
+            (Formula::atom(&own), 10),
+            (Formula::atom(&own).iff(Formula::at_least_one(atoms())), 14),
+            (Formula::atom(&own).implies(Formula::exactly_one(atoms())), 14),
+        ];
+        assert_eq!(formula_set.formulas.len(), expected.len());
+        for (entry, (formula, line)) in formula_set.formulas.iter().zip(expected) {
+            assert!(entry.formula == formula, "the formula at line {line}");
+            assert_eq!(entry.origin.requirement, own);
+            assert_eq!(entry.origin.line, line);
+        }
+
+        CLAUSES.with(|count| count.set(0));
+        let mut encoding = Encoding::new(Clauses(B::default()), &formula_set);
+        let clauses = CLAUSES.with(std::cell::Cell::get);
+        assert!(clauses <= 9 * PARTS, "{clauses} clauses for {PARTS} parts");
+        let selectors = encoding.selectors().to_vec();
+        let middle = PARTS / 2;
+        assert!(holds(&mut encoding, &selectors, &assume(&parts, &[middle])));
+        let two = assume(&parts, &[0, PARTS - 1]);
+        assert!(!holds(&mut encoding, &selectors, &two));
+        assert!(!holds(&mut encoding, &selectors, &assume(&parts, &[])));
+        let mut unheld = assume(&parts, &[]);
+        unheld.push((own.as_str(), false));
+        assert!(holds(&mut encoding, &selectors[1..], &unheld));
+        let mut one = assume(&parts, &[middle]);
+        one.push((own.as_str(), false));
+        assert!(!holds(&mut encoding, &selectors[1..], &one));
+    }
+
+    /// The finding of check 1 for the formula `shown` at `line` of [`GREETING`], which
+    /// `requirement` holds, beside the conflict's other formulas, each with its line there.
+    fn conflict(line: u32, requirement: &str, shown: &str, others: &[(&str, u32)]) -> Finding {
+        let others: Vec<String> = others
+            .iter()
+            .map(|(other, at)| format!("{other} at {GREETING}:{at}"))
+            .collect();
+        let message = format!("{shown} can't hold together with {}", others.join(", "));
+        Finding::error(UNSATISFIABLE, GREETING, line, Some(requirement), message)
+    }
+
+    /// A conflict through a composed `exactly_one` shows, in the composition's exclusion, the
+    /// parts that the conflict's other formulas name, and `...` for the parts that none of them
+    /// names.
+    fn a_conflict_shows_the_parts_it_names<B: Backend + Default>() {
+        let iff = "`(EX-0001-001 <-> (EX-0001-002 | EX-0001-003 | EX-0001-004))`";
+        for (logic, exclusion) in [
+            (
+                "EX-0001-002 & EX-0001-003",
+                "`(EX-0001-001 -> exactly_one(EX-0001-002, EX-0001-003, ...))`",
+            ),
+            (
+                "EX-0001-002 & EX-0001-003 & EX-0001-004",
+                "`(EX-0001-001 -> exactly_one(EX-0001-002, EX-0001-003, EX-0001-004))`",
+            ),
+        ] {
+            let mut findings = Vec::new();
+            check::<Wide<B>>(&config(), &composed(3, Some(logic)), &mut findings);
+            let text = format!("`{}`", parse(logic).unwrap());
+            let formula = text.as_str();
+            let expected = [
+                conflict(14, "EX-0001-001", iff, &[(exclusion, 14), (formula, 54)]),
+                conflict(14, "EX-0001-001", exclusion, &[(iff, 14), (formula, 54)]),
+                conflict(54, "EX-0001-005", formula, &[(iff, 14), (exclusion, 14)]),
+            ];
+            assert_eq!(findings, expected, "{logic}");
+        }
+    }
+
     crate::solver::backend_tests!(
         empty_set,
         a_consistent_result_is_read_from_the_cache,
@@ -1390,5 +1657,7 @@ mod tests {
         minimal_from_a_wide_core_of_three,
         vacuous_condition,
         condition_vacuous_through_exactly_one,
+        wide_composition,
+        a_conflict_shows_the_parts_it_names,
     );
 }
