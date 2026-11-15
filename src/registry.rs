@@ -88,16 +88,15 @@ pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding
     };
     let identifiers = Identifiers::of(set);
     let mut codes: BTreeMap<&str, u32> = BTreeMap::new();
-    let mut kinds: BTreeMap<(&str, String), u32> = BTreeMap::new();
+    let mut kinds: BTreeMap<(&str, i64), u32> = BTreeMap::new();
     for entry in &entries {
         check_entry(file, entry, &identifiers, findings);
         if let Some(code) = entry.code() {
             match codes.get(code) {
                 Some(first) => {
                     let at = entry.line_of("code");
-                    let message = format!(
-                        "the code `{code}` is the code of the entry at line {first} too"
-                    );
+                    let message =
+                        format!("the code `{code}` is the code of the entry at line {first} too");
                     findings.push(Finding::error(RULE, file, at, None, message));
                 }
                 None => {
@@ -105,14 +104,16 @@ pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding
                 }
             }
         }
+        // A format that isn't a whole number gets a finding of its own, so the check compares
+        // whole numbers alone.
         let identifies = entry.value("identifies").and_then(Value::as_str);
-        if let (Some(identifies), Some(format)) = (identifies, entry.value("format")) {
-            let kind = (identifies, format.to_string());
+        let format = entry.value("format").and_then(Value::as_integer);
+        if let (Some(identifies), Some(format)) = (identifies, format) {
+            let kind = (identifies, format);
             match kinds.get(&kind) {
                 Some(first) => {
-                    let message = format!(
-                        "the entry at line {first} holds the same identifies and format"
-                    );
+                    let message =
+                        format!("the entry at line {first} holds the same identifies and format");
                     findings.push(Finding::error(RULE, file, entry.line, None, message));
                 }
                 None => {
@@ -226,7 +227,10 @@ fn check_entry(file: &str, entry: &Entry, ids: &Identifiers, findings: &mut Vec<
     };
     for (key, (line, _)) in &entry.fields {
         if !FIELDS.contains(&key.as_str()) {
-            error(*line, format!("the entry holds `{key}`, and {UNKNOWN_MESSAGE}"));
+            error(
+                *line,
+                format!("the entry holds `{key}`, and {UNKNOWN_MESSAGE}"),
+            );
         }
     }
     for key in FIELDS {
@@ -260,7 +264,9 @@ fn identifies_problem(value: &Value) -> Option<String> {
         Some(_) => None,
         None => {
             let kind = kind(value);
-            Some(format!("identifies is {kind}, which isn't a text that states a kind of record"))
+            Some(format!(
+                "identifies is {kind}, which isn't a text that states a kind of record"
+            ))
         }
     }
 }
@@ -271,18 +277,24 @@ fn format_problem(value: &Value) -> Option<String> {
         Some(format) => format.to_string(),
         None => kind(value).to_string(),
     };
-    Some(format!("format is {found}, which isn't a whole number of at least 1"))
+    Some(format!(
+        "format is {found}, which isn't a whole number of at least 1"
+    ))
 }
 
 fn defined_by_problem(value: &Value, ids: &Identifiers) -> Option<String> {
     let Some(id) = value.as_str() else {
         let kind = kind(value);
-        return Some(format!("defined_by is {kind}, which isn't the identifier of a requirement"));
+        return Some(format!(
+            "defined_by is {kind}, which isn't the identifier of a requirement"
+        ));
     };
     if ids.retired.contains(id) {
         Some(format!("defined_by is `{id}`, which an RFC retires"))
     } else if !ids.held.contains(id) {
-        Some(format!("defined_by is `{id}`, which no requirement of a written RFC holds"))
+        Some(format!(
+            "defined_by is `{id}`, which no requirement of a written RFC holds"
+        ))
     } else {
         None
     }
@@ -293,12 +305,16 @@ fn defined_by_problem(value: &Value, ids: &Identifiers) -> Option<String> {
 fn body_length_problems(value: &Value) -> Vec<String> {
     let Some(table) = value.as_table() else {
         let kind = kind(value);
-        return vec![format!("body_length is {kind}, which isn't a table of min and max")];
+        return vec![format!(
+            "body_length is {kind}, which isn't a table of min and max"
+        )];
     };
     let mut problems = Vec::new();
     for key in table.keys() {
         if !LENGTH_FIELDS.contains(&key.as_str()) {
-            problems.push(format!("body_length holds `{key}`, and it holds only min and max"));
+            problems.push(format!(
+                "body_length holds `{key}`, and it holds only min and max"
+            ));
         }
     }
     let mut ends = Vec::new();
@@ -308,7 +324,9 @@ fn body_length_problems(value: &Value) -> Vec<String> {
             Some((_, Some(end))) => ends.push(end),
             Some((end, None)) => {
                 let kind = kind(end);
-                problems.push(format!("body_length's {key} is {kind}, which isn't a whole number"));
+                problems.push(format!(
+                    "body_length's {key} is {kind}, which isn't a whole number"
+                ));
             }
         }
     }
@@ -319,7 +337,9 @@ fn body_length_problems(value: &Value) -> Vec<String> {
     }
     if let &[min, max] = ends.as_slice() {
         if min > max {
-            problems.push(format!("body_length's min, {min}, is greater than its max, {max}"));
+            problems.push(format!(
+                "body_length's min, {min}, is greater than its max, {max}"
+            ));
         }
     }
     problems
