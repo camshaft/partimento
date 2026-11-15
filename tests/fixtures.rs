@@ -8,7 +8,7 @@
 mod common;
 
 use common::{each_line, fails, lines, tree, tree_of, Fixture};
-use partimento::{config, Binding, ByteVec, ChangeKind, Options, Report, Tree};
+use partimento::{config, Binding, ByteVec, ChangeKind, Options, Report, Tree, VersionChange};
 
 const FIXTURES: &[Fixture] = &[
     fixture!(
@@ -90,18 +90,19 @@ fn stale(path: &str) -> String {
     format!("error[drift] {path}:1: {STALE}\n")
 }
 
-/// The files of one side of fixture 15-diff, `base` or `head`, by their paths in its tree.
+/// The files of one side of a diff fixture, `base` or `head`, by their paths in its tree.
 macro_rules! diff_tree {
-    ($side:literal $(, $path:literal)* $(,)?) => {
+    ($fixture:literal, $side:literal $(, $path:literal)* $(,)?) => {
         &[$((
             $path,
-            include_str!(concat!("fixtures/15-diff/", $side, "/", $path)),
+            include_str!(concat!("fixtures/", $fixture, "/", $side, "/", $path)),
         ),)*]
     };
 }
 
 /// The base tree of fixture 15-diff.
 const DIFF_BASE: &[(&str, &str)] = diff_tree!(
+    "15-diff",
     "base",
     "spec.toml",
     "rfcs/index.toml",
@@ -111,6 +112,7 @@ const DIFF_BASE: &[(&str, &str)] = diff_tree!(
 
 /// The head tree of fixture 15-diff, which moves a requirement to 02-farewell.toml.
 const DIFF_HEAD: &[(&str, &str)] = diff_tree!(
+    "15-diff",
     "head",
     "spec.toml",
     "rfcs/index.toml",
@@ -121,6 +123,29 @@ const DIFF_HEAD: &[(&str, &str)] = diff_tree!(
 
 /// The changes the diff of fixture 15-diff's base and head prints, one a line.
 const DIFF_EXPECTED: &str = include_str!("fixtures/15-diff/expected.txt");
+
+/// The base tree of fixture 40-contract-version, whose contract RFC 100 is at version 1.
+const VERSION_BASE: &[(&str, &str)] = diff_tree!(
+    "40-contract-version",
+    "base",
+    "spec.toml",
+    "rfcs/index.toml",
+    "rfcs/0100-answers/rfc.toml",
+    "rfcs/0100-answers/01-answer.toml",
+);
+
+/// The head tree of fixture 40-contract-version, which moves RFC 100 to version 2.
+const VERSION_HEAD: &[(&str, &str)] = diff_tree!(
+    "40-contract-version",
+    "head",
+    "spec.toml",
+    "rfcs/index.toml",
+    "rfcs/0100-answers/rfc.toml",
+    "rfcs/0100-answers/01-answer.toml",
+);
+
+/// The version change the diff of fixture 40-contract-version's base and head prints.
+const VERSION_EXPECTED: &str = include_str!("fixtures/40-contract-version/expected.txt");
 
 /// The failing findings of a fixture's expected findings as a diff prints them with the
 /// fixture's tree on `side`, `base` or `head`: each file's path after `<side>:`.
@@ -147,6 +172,24 @@ fn diff_lists_each_change_of_fixture_15() {
     let changes = partimento::diff(&base, &head);
     let changes = changes.expect("both trees pass the format rules");
     assert_eq!(each_line(&changes), DIFF_EXPECTED);
+}
+
+#[test]
+fn diff_lists_the_contract_version_change_of_fixture_40() {
+    let (base, head) = (tree_of(VERSION_BASE), tree_of(VERSION_HEAD));
+    // Both trees hold the same requirements, so the version change is the diff's only change.
+    let changes = partimento::diff(&base, &head);
+    let changes = changes.expect("both trees pass the format rules");
+    assert!(changes.is_empty(), "{}", each_line(&changes));
+    let versions = partimento::contract_versions(&base, &head);
+    let versions = versions.expect("both trees pass the format rules");
+    let expected = VersionChange {
+        rfc: 100,
+        base: 1,
+        head: 2,
+    };
+    assert_eq!(versions, [expected]);
+    assert_eq!(each_line(&versions), VERSION_EXPECTED);
 }
 
 #[test]
@@ -460,7 +503,9 @@ mod binary {
 
     use partimento::{ByteVec, Tree};
 
-    use super::{fails, named, split, stale, tree, with_side, DIFF_EXPECTED, FIXTURES};
+    use super::{
+        fails, named, split, stale, tree, with_side, DIFF_EXPECTED, FIXTURES, VERSION_EXPECTED,
+    };
 
     fn root(name: &str) -> PathBuf {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -531,6 +576,21 @@ mod binary {
         assert_eq!(output.status.code(), Some(0));
         let output = run(&["diff", "--format", "json", base, base]);
         assert_eq!(String::from_utf8_lossy(&output.stdout), "[]\n");
+        assert_eq!(output.status.code(), Some(0));
+    }
+
+    #[test]
+    fn diff_prints_the_contract_version_change_of_fixture_40() {
+        let fixture = root("40-contract-version");
+        let (base, head) = (fixture.join("base"), fixture.join("head"));
+        let base = base.to_str().expect("the path is UTF-8");
+        let head = head.to_str().expect("the path is UTF-8");
+        let output = run(&["diff", base, head]);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), VERSION_EXPECTED);
+        assert_eq!(output.status.code(), Some(0));
+        let output = run(&["diff", base, head, "--format", "json"]);
+        let expected = include_str!("fixtures/40-contract-version/expected.json");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
         assert_eq!(output.status.code(), Some(0));
     }
 

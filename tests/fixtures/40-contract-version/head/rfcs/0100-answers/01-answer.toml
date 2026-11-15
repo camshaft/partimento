@@ -1,0 +1,13 @@
+[section]
+anchor = "answers"
+title = "Answers"
+problem = "The program drops requests."
+motivation = "An answer to each request keeps it."
+
+[[requirement]]
+id = "EX-0100-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST answer each request."
+binds_to = "system"
+rationale = "A caller waits for each answer."
