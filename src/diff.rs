@@ -135,30 +135,8 @@ type Order = (Option<(u32, u32)>, String);
 /// identifier; or, where a tree fails a format rule, each finding that fails, the base's first,
 /// with its file's path after the tree's side, `base:` or `head:`.
 pub(crate) fn changes(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
-    let mut failing = Vec::new();
-    let base = load("base", base, &mut failing);
-    let head = load("head", head, &mut failing);
-    let (Some(base), Some(head)) = (base, head) else {
-        return Err(failing);
-    };
-    let before = held(&base.set);
-    let after = held(&head.set);
-    let mut changes = BTreeMap::new();
-    for (id, block) in &before {
-        match after.get(id) {
-            None => insert(&mut changes, &base, ChangeKind::Retired, id, block),
-            Some(other) if !same_requirement(block, other) => {
-                insert(&mut changes, &head, ChangeKind::Changed, id, other);
-            }
-            Some(_) => {}
-        }
-    }
-    for (id, block) in &after {
-        if !before.contains_key(id) {
-            insert(&mut changes, &head, ChangeKind::Added, id, block);
-        }
-    }
-    Ok(changes.into_values().collect())
+    let (base, head) = load_both(base, head)?;
+    Ok(requirement_changes(&base, &head))
 }
 
 /// Each contract RFC that both trees hold whose `contract_version` differs from `base` to `head`,
@@ -168,18 +146,68 @@ pub(crate) fn contract_versions(
     base: &Tree,
     head: &Tree,
 ) -> Result<Vec<VersionChange>, Vec<Finding>> {
+    let (base, head) = load_both(base, head)?;
+    Ok(version_changes(&base, &head))
+}
+
+/// The changes [`changes`] returns and the version changes [`contract_versions`] returns, from
+/// one load of each tree; or, where a tree fails a format rule, each finding that fails, as
+/// [`changes`] returns them.
+pub(crate) fn changes_and_versions(
+    base: &Tree,
+    head: &Tree,
+) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
+    let (base, head) = load_both(base, head)?;
+    Ok((
+        requirement_changes(&base, &head),
+        version_changes(&base, &head),
+    ))
+}
+
+/// Both trees loaded, where both pass the format rules; otherwise each finding that fails, the
+/// base's first, with its file's path after the tree's side, `base:` or `head:`.
+fn load_both(base: &Tree, head: &Tree) -> Result<(Loaded, Loaded), Vec<Finding>> {
     let mut failing = Vec::new();
     let base = load("base", base, &mut failing);
     let head = load("head", head, &mut failing);
-    let (Some(base), Some(head)) = (base, head) else {
-        return Err(failing);
-    };
-    let after = versions(&head);
-    let changed = versions(&base).into_iter().filter_map(|(rfc, base)| {
+    match (base, head) {
+        (Some(base), Some(head)) => Ok((base, head)),
+        _ => Err(failing),
+    }
+}
+
+/// Each requirement added, changed and retired from `base` to `head`, in the order of its
+/// identifier.
+fn requirement_changes(base: &Loaded, head: &Loaded) -> Vec<Change> {
+    let before = held(&base.set);
+    let after = held(&head.set);
+    let mut changes = BTreeMap::new();
+    for (id, block) in &before {
+        match after.get(id) {
+            None => insert(&mut changes, base, ChangeKind::Retired, id, block),
+            Some(other) if !same_requirement(block, other) => {
+                insert(&mut changes, head, ChangeKind::Changed, id, other);
+            }
+            Some(_) => {}
+        }
+    }
+    for (id, block) in &after {
+        if !before.contains_key(id) {
+            insert(&mut changes, head, ChangeKind::Added, id, block);
+        }
+    }
+    changes.into_values().collect()
+}
+
+/// Each contract RFC that both trees hold whose `contract_version` differs from `base` to `head`,
+/// in the order of its number.
+fn version_changes(base: &Loaded, head: &Loaded) -> Vec<VersionChange> {
+    let after = versions(head);
+    let changed = versions(base).into_iter().filter_map(|(rfc, base)| {
         let head = *after.get(&rfc)?;
         (head != base).then_some(VersionChange { rfc, base, head })
     });
-    Ok(changed.collect())
+    changed.collect()
 }
 
 /// The `contract_version` of each contract RFC of the tree, by its number.
@@ -322,7 +350,10 @@ fn same(a: &Value, b: &Value) -> bool {
 mod tests {
     use toml::{Table, Value};
 
-    use super::{contract_versions, same, same_items, same_requirement, VersionChange};
+    use super::{
+        changes, changes_and_versions, contract_versions, same, same_items, same_requirement,
+        VersionChange,
+    };
     use crate::model::{Block, Field};
     use crate::{ByteVec, Tree};
 
@@ -414,6 +445,29 @@ rationale = "A caller waits for each answer."
         let found = contract_versions(&contract_tree(1), &contract_tree(1));
         let found = found.map_err(|findings| format!("{findings:?}"));
         assert_eq!(found, Ok(Vec::new()));
+    }
+
+    #[test]
+    fn changes_and_versions_returns_the_version_changes() {
+        let (base, head) = (contract_tree(1), contract_tree(2));
+        let found = changes_and_versions(&base, &head);
+        let found = found.map_err(|findings| format!("{findings:?}"));
+        let version = VersionChange {
+            rfc: 100,
+            base: 1,
+            head: 2,
+        };
+        assert_eq!(found, Ok((Vec::new(), vec![version])));
+    }
+
+    #[test]
+    fn changes_and_versions_of_a_failing_tree_returns_the_findings_of_changes() {
+        let (failing, passing) = (Tree::default(), contract_tree(1));
+        for (base, head) in [(&failing, &passing), (&passing, &failing)] {
+            let found = changes_and_versions(base, head).expect_err("a tree fails");
+            let expected = changes(base, head).expect_err("a tree fails");
+            assert_eq!(found, expected);
+        }
     }
 
     /// A block of the required fields alone, so that each compared field reads at its default.

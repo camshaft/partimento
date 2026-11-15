@@ -239,6 +239,17 @@ pub fn contract_versions(base: &Tree, head: &Tree) -> Result<Vec<VersionChange>,
     diff::contract_versions(base, head)
 }
 
+/// Each requirement added, changed and retired, as [`diff`] returns them, and each contract RFC
+/// whose `contract_version` differs, as [`contract_versions`] returns them, from one read of each
+/// tree; or, where either tree fails a format rule, each finding that fails, as [`diff`] returns
+/// them.
+pub fn diff_with_versions(
+    base: &Tree,
+    head: &Tree,
+) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
+    diff::changes_and_versions(base, head)
+}
+
 /// Renders the tree's generated files: the text of each section and one requirement file for each
 /// of its requirements, under the paths spec.toml sets. The tree holds the generated files alone.
 /// A set that breaks a format rule doesn't render: the error holds the findings of the format
