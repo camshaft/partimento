@@ -229,8 +229,11 @@ RFC that no RFC retires. A registry that doesn't hold an entry yet is a file of 
 alone.
 
 The registry holds an entry of each format of each kind table, whose `identifies` is the table's
-`name` and whose `format` is that format. A set whose spec.toml doesn't set `paths.registry`
-doesn't hold an entry, so it fails at each format of each kind table it holds.
+`name` and whose `format` is that format, and each entry matches a kind table: its `identifies` is
+the `name` of a kind table, its `format` is one of that table's `formats`, and its `defined_by`
+names a requirement of the section file that holds that table. A set whose spec.toml doesn't set
+`paths.registry`, or whose registry file is missing, doesn't hold an entry, so it fails at each
+format of each kind table it holds.
 
 A change of the set adds entries, and doesn't remove one or change its `code`, `identifies`,
 `format` or `body_length`: `partimento diff` reports each entry of the base that the head
@@ -259,8 +262,9 @@ the requirement's part. The check runs:
   type, unit, value and source, the form of each section's anchor and title, each RFC's area and
   `contract_version`, the agreement of `rfc.toml` and the index, and the implementation terms;
 - the fields of each kind table and their values, with the rule `kind`;
-- the registry's rules, where spec.toml sets `paths.registry`: that the file is there, the fields
-  of each entry and their values, and that it holds an entry of each format of each kind table;
+- the registry's rules: that the file is there where spec.toml sets `paths.registry`, the fields
+  of each entry and their values, that each entry matches a kind table, and that the registry
+  holds an entry of each format of each kind table;
 - the checks of the requirements: that their formulas hold together, which a SAT solver decides,
   with a smallest set of requirements that can't hold together where they don't; that each
   condition can hold while the rest of the set does; each relation's target; the boundary

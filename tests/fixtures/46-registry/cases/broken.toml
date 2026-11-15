@@ -1,4 +1,4 @@
-# Each entry after the first breaks one rule of the registry, as the comment above it says.
+# Each entry but the first and the last breaks one rule of the registry, as its comment says.
 
 [[entry]]
 code = "g"
@@ -150,3 +150,11 @@ identifies = "a fortnight"
 format = 1
 body_length = { min = "eight", max = 8 }
 defined_by = "EX-0001-001"
+
+# The entry of format 2 of `a greeting`, so that the registry holds each format of the kind table.
+[[entry]]
+code = "s"
+identifies = "a greeting"
+format = 2
+body_length = { min = 8, max = 12 }
+defined_by = "EX-0001-002"

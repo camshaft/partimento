@@ -7,7 +7,9 @@
 //! A section that specifies a kind of self-describing identifier names it in a `[[kind]]` table
 //! of its section file, whose `name` is the identifies of the kind's entries and whose `formats`
 //! lists the number of each form of the kind's identifier, so the registry holds an entry of each
-//! format of each kind table.
+//! format of each kind table. Each entry's identifies is the name of a kind table, its format is
+//! one of that table's formats, and its defined_by names a requirement of the section that holds
+//! that table.
 //!
 //! [`check`] reads one tree's registry against the requirements and the kind tables of its RFCs,
 //! and [`kept`] reads a change of the set, from a base tree to a head tree, for an entry it
@@ -23,8 +25,8 @@ use crate::config::Config;
 use crate::model::Set;
 use crate::{source, ByteVec, Finding, Tree};
 
-/// The rule of a registry that is missing or whose entry breaks a rule of its fields, or that
-/// doesn't hold an entry of a format of a kind table.
+/// The rule of a registry that is missing, or whose entry breaks a rule of its fields or doesn't
+/// match the kind tables, or that doesn't hold an entry of a format of a kind table.
 pub const RULE: &str = "registry";
 
 /// The rule of a change of the set that removes an entry of the registry, or changes its code,
@@ -89,38 +91,42 @@ impl Entry {
 }
 
 /// Checks the registry that spec.toml locates, where it locates one, against the requirements of
-/// the set, adding a finding for each rule the file breaks; and checks the fields of each kind
-/// table of the set's section files, and that the registry holds an entry of each format of each
-/// kind table, with the table's name as its identifies. Where spec.toml doesn't locate a
-/// registry, the set doesn't hold an entry, so each format of each kind table fails.
+/// the set, adding a finding for each rule the file breaks; checks the fields of each kind table
+/// of the set's section files; checks each entry against the kind tables: its identifies is the
+/// name of a kind table, its format is one of that table's formats, and its defined_by names a
+/// requirement of the section that holds that table; and checks that the registry holds an entry
+/// of each format of each kind table, with the table's name as its identifies.
+///
+/// Where spec.toml doesn't locate a registry, or the file it locates is missing, the set doesn't
+/// hold an entry, so each format of each kind table fails. Where the registry isn't UTF-8 or
+/// doesn't parse, the check reports that read and returns without the findings of the formats of
+/// the kind tables, since it doesn't know which entries the file holds.
 pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding>) {
     let tables = kinds(set, findings);
     let Some(file) = config.paths.registry.as_deref() else {
-        for table in &tables {
-            let name = table.name;
-            for format in &table.formats {
-                let message = format!(
-                    "the kind `{name}` has format {format}, and spec.toml doesn't set \
-                     `paths.registry`, so the set doesn't hold a registry entry of it"
-                );
-                findings.push(Finding::error(RULE, table.file, table.line, None, message));
-            }
-        }
+        unregistered(&tables, "spec.toml doesn't set `paths.registry`", findings);
         return;
     };
     let Some(bytes) = tree.files.get(file) else {
         let message = "the registry file that `paths.registry` states is missing";
         findings.push(Finding::error(RULE, file, 1, None, message));
+        let reason = format!("the registry file `{file}` that `paths.registry` states is missing");
+        unregistered(&tables, &reason, findings);
         return;
     };
     let Some(entries) = read(file, bytes, findings) else {
         return;
     };
     let identifiers = Identifiers::of(set);
+    let mut named: BTreeMap<&str, Vec<&Kind>> = BTreeMap::new();
+    for table in &tables {
+        named.entry(table.name).or_default().push(table);
+    }
     let mut codes: BTreeMap<&str, u32> = BTreeMap::new();
     let mut kinds: BTreeMap<(&str, i64), u32> = BTreeMap::new();
     for entry in &entries {
         check_entry(file, entry, &identifiers, findings);
+        check_kind(file, entry, &identifiers, &named, findings);
         if let Some(code) = entry.code() {
             match codes.get(code) {
                 Some(first) => {
@@ -161,6 +167,21 @@ pub fn check(tree: &Tree, config: &Config, set: &Set, findings: &mut Vec<Finding
             let message = format!(
                 "the kind `{name}` has format {format}, and the registry `{file}` doesn't hold \
                  an entry of identifies `{name}` and format {format}"
+            );
+            findings.push(Finding::error(RULE, table.file, table.line, None, message));
+        }
+    }
+}
+
+/// Adds a finding at each format of each kind table, for a set that doesn't hold a registry entry
+/// since `reason` holds.
+fn unregistered(tables: &[Kind], reason: &str, findings: &mut Vec<Finding>) {
+    for table in tables {
+        let name = table.name;
+        for format in &table.formats {
+            let message = format!(
+                "the kind `{name}` has format {format}, and {reason}, so the set doesn't hold a \
+                 registry entry of it"
             );
             findings.push(Finding::error(RULE, table.file, table.line, None, message));
         }
@@ -255,21 +276,41 @@ fn read(file: &str, bytes: &ByteVec, findings: &mut Vec<Finding>) -> Option<Vec<
 }
 
 /// The identifiers of the set that a `defined_by` reads: each requirement's of a written RFC,
-/// and each that an RFC retires, which a `defined_by` doesn't name.
+/// with the section file that holds it, and each that an RFC retires, which a `defined_by`
+/// doesn't name.
 struct Identifiers<'a> {
     held: BTreeSet<&'a str>,
+    /// The path of each section file that holds a requirement, by the requirement's identifier.
+    sections: BTreeMap<&'a str, BTreeSet<&'a str>>,
     retired: BTreeSet<&'a str>,
 }
 
 impl<'a> Identifiers<'a> {
     fn of(set: &'a Set) -> Identifiers<'a> {
-        let sections = set.rfcs.iter().flat_map(|rfc| &rfc.sections);
-        let blocks = sections.flat_map(|section| &section.requirements);
-        let held = blocks.filter_map(|block| block.text("id")).collect();
+        let mut held = BTreeSet::new();
+        let mut sections: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for section in set.rfcs.iter().flat_map(|rfc| &rfc.sections) {
+            let file = section.file.as_str();
+            let blocks = section.requirements.iter();
+            for id in blocks.filter_map(|block| block.text("id")) {
+                held.insert(id);
+                sections.entry(id).or_default().insert(file);
+            }
+        }
         let metas = set.rfcs.iter().filter_map(|rfc| rfc.meta.as_ref());
         let retired = metas.flat_map(|meta| &meta.retired);
         let retired = retired.map(|id| id.value.as_str()).collect();
-        Identifiers { held, retired }
+        Identifiers {
+            held,
+            sections,
+            retired,
+        }
+    }
+
+    /// Whether the section file `file` holds the requirement `id`.
+    fn in_section(&self, id: &str, file: &str) -> bool {
+        let files = self.sections.get(id);
+        files.is_some_and(|files| files.contains(file))
     }
 }
 
@@ -286,11 +327,12 @@ struct Kind<'a> {
     formats: Vec<i64>,
 }
 
-/// The kind tables of the set's section files whose name is a text that no earlier kind table
-/// holds, in the order of the files, adding a finding with the rule `kind` for each rule a kind
-/// table breaks: a field other than name and formats, or a missing one; a name that isn't a text,
-/// or that an earlier kind table holds; and formats that aren't a list of one or more whole
-/// numbers of at least 1, or that hold one number twice.
+/// The kind tables of the set's section files whose name is a text, in the order of the files,
+/// adding a finding with the rule `kind` for each rule a kind table breaks: a field other than
+/// name and formats, or a missing one; a name that isn't a text, or that an earlier kind table
+/// holds; and formats that aren't a list of one or more whole numbers of at least 1, or that hold
+/// one number twice. A kind table whose name an earlier one holds stays in the list, so that the
+/// check of the registry reads each of its formats too.
 fn kinds<'a>(set: &'a Set, findings: &mut Vec<Finding>) -> Vec<Kind<'a>> {
     let mut tables: Vec<Kind<'a>> = Vec::new();
     let mut names: BTreeMap<&str, (&str, u32)> = BTreeMap::new();
@@ -329,13 +371,16 @@ fn kinds<'a>(set: &'a Set, findings: &mut Vec<Finding>) -> Vec<Kind<'a>> {
                 error(field.line, format!("name is {kind}, which isn't a text"));
                 continue;
             };
-            if let Some((first, line)) = names.get(name) {
-                let message =
-                    format!("the kind table at {first}:{line} holds the name `{name}` too");
-                error(field.line, message);
-                continue;
+            match names.get(name) {
+                Some((first, line)) => {
+                    let message =
+                        format!("the kind table at {first}:{line} holds the name `{name}` too");
+                    error(field.line, message);
+                }
+                None => {
+                    names.insert(name, (file, table.line));
+                }
             }
-            names.insert(name, (file, table.line));
             let (line, formats) = formats.unwrap_or((table.line, Vec::new()));
             tables.push(Kind {
                 file,
@@ -404,6 +449,60 @@ fn check_entry(file: &str, entry: &Entry, ids: &Identifiers, findings: &mut Vec<
         };
         for message in problems {
             error(entry.line_of(key), message);
+        }
+    }
+}
+
+/// Checks one entry against the kind tables of the set, by their names: its identifies is the
+/// name of a kind table, its format is one of that table's formats, and its defined_by names a
+/// requirement of the section file that holds that table. Where two kind tables hold the name,
+/// which the rule `kind` reports, a format or a defined_by of either table passes. A field whose
+/// own form breaks a rule has the finding of [`check_entry`], so this check doesn't compare it,
+/// and it doesn't compare the format or the defined_by of an entry whose identifies isn't the name
+/// of a kind table.
+fn check_kind(
+    file: &str,
+    entry: &Entry,
+    ids: &Identifiers,
+    named: &BTreeMap<&str, Vec<&Kind>>,
+    findings: &mut Vec<Finding>,
+) {
+    let identifies = entry.value("identifies");
+    let Some(identifies) = identifies.and_then(Value::as_str) else {
+        return;
+    };
+    if identifies.trim().is_empty() {
+        return;
+    }
+    let mut error = |key: &str, message: String| {
+        findings.push(Finding::error(RULE, file, entry.line_of(key), None, message));
+    };
+    let Some(tables) = named.get(identifies) else {
+        let message = format!("identifies is `{identifies}`, which isn't a kind table's name");
+        error("identifies", message);
+        return;
+    };
+    let format = entry.value("format").and_then(Value::as_integer);
+    if let Some(format) = format.filter(|format| *format >= 1) {
+        let listed = tables.iter().any(|table| table.formats.contains(&format));
+        if !listed {
+            let message = format!(
+                "format is {format}, which isn't one of the formats of the kind `{identifies}`"
+            );
+            error("format", message);
+        }
+    }
+    let defined_by = entry.value("defined_by");
+    let id = defined_by.filter(|value| defined_by_problem(value, ids).is_none());
+    if let Some(id) = id.and_then(Value::as_str) {
+        let held = tables.iter().any(|table| ids.in_section(id, table.file));
+        if !held {
+            let section = tables[0].file;
+            let message = format!(
+                "defined_by is `{id}`, which isn't a requirement of `{section}`, the section file \
+                 of the kind `{identifies}`"
+            );
+            error("defined_by", message);
         }
     }
 }

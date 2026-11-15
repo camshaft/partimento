@@ -1,2 +1,2 @@
 # The registry of identifier kinds: one entry for each format of each kind that an RFC specifies.
-# No RFC specifies a kind yet, so the registry holds comment lines alone.
+# It doesn't hold an entry yet, so it holds comment lines alone.

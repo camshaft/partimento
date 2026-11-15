@@ -1,0 +1,14 @@
+[section]
+anchor = "parting"
+title = "Parting"
+problem = "A person who stops the program doesn't know that it stopped."
+motivation = "A farewell tells the person that the program stopped."
+prose = "The program bids the person who stops it farewell."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print \"goodbye\" when it stops."

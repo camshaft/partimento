@@ -35,7 +35,7 @@ formats = [1]
 # A name that the first kind table holds.
 [[kind]]
 name = "a greeting"
-formats = [3]
+formats = [1]
 
 # Formats that aren't a list.
 [[kind]]

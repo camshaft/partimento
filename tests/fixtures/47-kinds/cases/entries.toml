@@ -1,0 +1,40 @@
+# A registry whose entries `g` and `h` pass, and each entry after them breaks one rule that
+# compares an entry with the kind tables, as the comment above it says.
+
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+[[entry]]
+code = "h"
+identifies = "a greeting"
+format = 2
+body_length = { min = 8, max = 12 }
+defined_by = "EX-0001-001"
+
+# A defined_by that names a requirement of another section than the kind table's.
+[[entry]]
+code = "f"
+identifies = "a farewell"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-003"
+
+# An identifies that isn't the name of a kind table.
+[[entry]]
+code = "w"
+identifies = "a wave"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+# A format that isn't one of the formats of the kind table its identifies names.
+[[entry]]
+code = "t"
+identifies = "a greeting"
+format = 3
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
