@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/camshaft/partimento/compare/v0.6.0...v0.6.1) - 2026-11-15
+
+### Added
+
+- check each registry entry against the kind tables ([#88](https://github.com/camshaft/partimento/pull/88))
+
+### Fixed
+
+- compose `exactly_one` requirements in clauses linear in their parts ([#87](https://github.com/camshaft/partimento/pull/87))
+
+### Other
+
+- the registry check's skip of a field its own check reports, and two kind tables of one name ([#89](https://github.com/camshaft/partimento/pull/89))
+
 ## [0.6.0](https://github.com/camshaft/partimento/compare/v0.5.1...v0.6.0) - 2026-11-15
 
 ### Added
