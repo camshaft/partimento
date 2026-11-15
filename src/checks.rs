@@ -222,8 +222,8 @@ impl<'a> Context<'a> {
     /// Adds the requirement's formulas and conditions to the set, and checks its fields.
     fn build(&mut self, r: Requirement<'a>) {
         let block = r.block;
-        // A requirement at the permissive level, the last of two or more, adds no formula and
-        // no condition: its fields are still checked.
+        // A requirement at the permissive level, the last of two or more, doesn't add a formula
+        // or a condition: its fields are still checked.
         let levels = &self.config.levels;
         let last = levels.last().filter(|_| levels.len() > 1);
         self.permissive = last.is_some_and(|last| block.text("level") == Some(last.as_str()));
