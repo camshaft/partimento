@@ -168,15 +168,17 @@ hold:
   `depends_on`, `implies`, `refines`, `conflicts_with` or `supersedes`;
 - `compose`, one of `atomic`, `all_of`, `any_of`, `exactly_one` and `unless`, with its `parts`;
 - `conditions` and `logic`;
-- `params`, each a table that holds the parameter's `name`, its `bound` (`min`, `max` or
-  `exact`), its `type`, its `unit`, and either its `value` or its `source`.
+- `params`, each a table that holds the parameter's `name`, its `type`, its `unit`, and either
+  its `bound` (`min`, `max` or `exact`) with its `value`, or its `source`.
 
 A parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`, and its `unit` is `s`
 for a duration, `B` for a size and `per_s` for a rate; a count and a fraction don't hold a unit.
 The value of a count or a size is a whole number, and the value of a fraction is from 0 to 1. A
 parameter without a value names where its value comes from: `source = "deployment"`, set where
 the system runs, or `source = "contract"`, read from a parameter of the same name in a contract
-RFC.
+RFC. A parameter with a source doesn't hold a `bound`: the bounds that other parameters of the same
+name state hold on its value. The check that a name has one type and one unit reads it, and the
+comparisons of minimum, maximum and exact bounds leave it out.
 
 The last of two or more levels, such as `MAY`, is permissive: a requirement at that level allows
 something, so it adds neither a formula nor a condition to the formula set that the consistency

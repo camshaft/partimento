@@ -86,6 +86,8 @@ const FIXTURES: &[Fixture] = &[
     fixture!("41-permissive-cycle"),
     fixture!("42-permissive-polarity"),
     fixture!("43-permissive-condition"),
+    fixture!("44-sourced-parameter"),
+    fixture!("45-sourced-bound"),
 ];
 
 /// The listed fixture of that name.

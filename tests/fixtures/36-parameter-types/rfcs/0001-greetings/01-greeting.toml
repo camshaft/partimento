@@ -92,7 +92,7 @@ id = "EX-0001-010"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print at most the replies the contract allows."
-params = [{ name = "reply.limit", bound = "max", type = "count", source = "contract" }]
+params = [{ name = "reply.limit", type = "count", source = "contract" }]
 
 [[requirement]]
 binds_to = "system"
@@ -101,7 +101,7 @@ id = "EX-0001-011"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print at most the replies its settings allow."
-params = [{ name = "reply.cap", bound = "max", type = "count", source = "settings" }]
+params = [{ name = "reply.cap", type = "count", source = "settings" }]
 
 [[requirement]]
 binds_to = "system"
@@ -111,7 +111,7 @@ level = "MUST"
 polarity = "required"
 statement = "The program MUST print a reply of bounded size, delay, rate and share."
 params = [
-    { name = "reply.delay", bound = "max", type = "duration", unit = "s", source = "deployment" },
+    { name = "reply.delay", type = "duration", unit = "s", source = "deployment" },
     { name = "reply.ratio", bound = "max", type = "fraction", value = 0.5 },
     { name = "reply.burst", bound = "max", type = "rate", unit = "per_s", value = 10 },
     { name = "reply.body", bound = "max", type = "size", unit = "B", value = 1024 },
