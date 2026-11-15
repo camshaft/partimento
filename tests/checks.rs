@@ -253,9 +253,10 @@ fn exactly_one_fails_where_other_formulas_force_both_parts() {
     for (backend, check) in backends() {
         let report = check(&tree, &Options::default());
         let found = places(&report);
+        let shown = lines(&report);
         let either = found == asserted || found == composed;
-        assert!(either, "{backend}: {}", lines(&report));
-        assert!(lines(&report).contains(exclusion), "{backend}: {}", lines(&report));
+        assert!(either, "{backend}: {shown}");
+        assert!(shown.contains(exclusion), "{backend}: {shown}");
         assert!(report.failed(), "{backend}");
     }
 }
