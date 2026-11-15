@@ -9,3 +9,4 @@ error[parameter] rfcs/0001-greetings/01-greeting.toml:77: EX-0001-008: `reply.wa
 error[parameter] rfcs/0001-greetings/01-greeting.toml:86: EX-0001-009: `reply.rate` holds neither `value` nor `source`
 error[parameter] rfcs/0001-greetings/01-greeting.toml:95: EX-0001-010: no contract's RFC holds a parameter `reply.limit`
 error[parameter] rfcs/0001-greetings/01-greeting.toml:104: EX-0001-011: a parameter's `source` is `deployment` or `contract`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:127: EX-0001-013: `reply.speed`'s `value` is a number
