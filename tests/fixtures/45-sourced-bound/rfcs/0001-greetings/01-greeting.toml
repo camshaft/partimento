@@ -1,0 +1,41 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting within 30 seconds of its start."
+params = [{ name = "greeting.wait", bound = "max", type = "duration", unit = "s", value = 30 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting within the wait the deployment sets."
+params = [{ name = "greeting.wait", bound = "max", type = "duration", unit = "s", source = "deployment" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print at most 3 greetings."
+params = [{ name = "greeting.count", bound = "max", type = "count", value = 3 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-004"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print as many greetings as the deployment sets."
+params = [{ name = "greeting.count", type = "duration", unit = "s", source = "deployment" }]
