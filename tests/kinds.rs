@@ -291,7 +291,10 @@ fn a_kind_table_whose_name_an_earlier_one_holds_fails_at_each_format_without_an_
 
 #[test]
 fn a_defined_by_that_the_entry_check_reports_isnt_compared_with_the_kind_tables() {
-    let (held, unheld) = ("defined_by = \"EX-0001-002\"", "defined_by = \"EX-0001-009\"");
+    let (held, unheld) = (
+        "defined_by = \"EX-0001-002\"",
+        "defined_by = \"EX-0001-009\"",
+    );
     let registry = IDENTIFIERS.replacen(held, unheld, 1);
     assert_ne!(registry, IDENTIFIERS, "entry `f` holds EX-0001-002");
     let report = check(&with_file(REGISTRY, &registry));
@@ -319,15 +322,22 @@ fn a_format_that_the_entry_check_reports_isnt_compared_with_the_kind_tables() {
 }
 
 #[test]
-fn a_defined_by_of_the_section_file_of_either_kind_table_of_one_name_passes() {
+fn a_defined_by_of_the_section_file_of_either_kind_table_of_one_name_isnt_reported() {
     let repeated = "\n[[kind]]\nname = \"a greeting\"\nformats = [1, 2]\n\n[[requirement]]\n";
     let parting = PARTING.replacen("\n[[requirement]]\n", repeated, 1);
-    assert_ne!(parting, PARTING, "the second section file holds a requirement");
-    let (first, second) = ("defined_by = \"EX-0001-001\"", "defined_by = \"EX-0001-003\"");
+    assert_ne!(
+        parting, PARTING,
+        "the second section file holds a requirement"
+    );
+    let (first, second) = (
+        "defined_by = \"EX-0001-001\"",
+        "defined_by = \"EX-0001-003\"",
+    );
     let registry = IDENTIFIERS.replacen(first, second, 1);
     assert_ne!(registry, IDENTIFIERS, "entry `g` holds EX-0001-001");
     let mut tree = with_file(SECOND_SECTION, &parting);
-    tree.files.insert(REGISTRY.to_string(), ByteVec::from(registry));
+    tree.files
+        .insert(REGISTRY.to_string(), ByteVec::from(registry));
     let report = check(&tree);
     assert_eq!(lines(&report.findings), TWO_FILES_EXPECTED);
     assert!(report.failed());
