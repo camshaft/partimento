@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/camshaft/partimento/compare/v0.4.0...v0.4.1) - 2026-11-15
+
+### Other
+
+- Rename fixture 37's RFC 101 to Couriers, and reword a comment in src/checks.rs ([#76](https://github.com/camshaft/partimento/pull/76))
+- Test a permissive requirement's relations in the cycle and polarity checks, and its conditions ([#75](https://github.com/camshaft/partimento/pull/75))
+- a permissive requirement's relations and bounds still count in the other checks ([#73](https://github.com/camshaft/partimento/pull/73))
+- Load each tree once in `partimento diff` ([#71](https://github.com/camshaft/partimento/pull/71))
+- Test a non-number parameter value and the diff's version line through the binary ([#72](https://github.com/camshaft/partimento/pull/72))
+
 ## [0.4.0](https://github.com/camshaft/partimento/compare/v0.3.2...v0.4.0) - 2026-11-15
 
 ### Other
