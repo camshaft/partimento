@@ -5,6 +5,10 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 prose = "The program greets the person who starts it."
 
+[[kind]]
+name = "a greeting"
+formats = [1, 2]
+
 [[requirement]]
 binds_to = "system"
 rationale = "The tests need this requirement."

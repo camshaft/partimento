@@ -1,5 +1,6 @@
 //! The registry of identifier kinds, through fixture 46-registry, whose spec.toml sets
-//! `paths.registry`: the check of the fixture with its registry, with a registry of comment lines
+//! `paths.registry` and whose section file names the kind `a greeting`, with formats 1 and 2, in
+//! a kind table: the check of the fixture with its registry, with a registry of comment lines
 //! alone, without the file, with a registry whose entries each break one rule, with a registry
 //! that doesn't parse, and without `paths.registry`; the checks of `paths.registry` in spec.toml;
 //! and the diff of a change that removes or alters an entry, of one that only adds, and of a head
@@ -34,6 +35,46 @@ const FILES: &[(&str, &str)] = &[
     embed!("rfcs/0001-greetings/01-greeting.toml"),
     (REGISTRY, ENTRIES),
 ];
+
+/// The fixture's section file, which names the kind `a greeting`, with formats 1 and 2, at its
+/// line 10.
+const SECTION: &str = "rfcs/0001-greetings/01-greeting.toml";
+
+/// The text of the fixture's section file.
+const GREETING: &str = include_str!("fixtures/46-registry/rfcs/0001-greetings/01-greeting.toml");
+
+/// The findings of the fixture with a registry that doesn't hold an entry: each format of the
+/// kind table.
+const NO_ENTRY_EXPECTED: &str = "\
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 1, and \
+the registry `registry/identifiers.toml` doesn't hold an entry of identifies `a greeting` and \
+format 1
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 2, and \
+the registry `registry/identifiers.toml` doesn't hold an entry of identifies `a greeting` and \
+format 2
+";
+
+/// The findings of the fixture without its registry file: the missing file, and each format of
+/// the kind table.
+const MISSING_EXPECTED: &str = "\
+error[registry] registry/identifiers.toml:1: the registry file that `paths.registry` states is \
+missing
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 1, and \
+the registry file `registry/identifiers.toml` that `paths.registry` states is missing, so the set \
+doesn't hold a registry entry of it
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 2, and \
+the registry file `registry/identifiers.toml` that `paths.registry` states is missing, so the set \
+doesn't hold a registry entry of it
+";
+
+/// The findings of the fixture without `paths.registry`: each format of the kind table, whether
+/// or not the tree holds a file at the registry's path, which the check doesn't read.
+const UNREGISTERED_EXPECTED: &str = "\
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 1, and \
+spec.toml doesn't set `paths.registry`, so the set doesn't hold a registry entry of it
+error[registry] rfcs/0001-greetings/01-greeting.toml:10: the kind `a greeting` has format 2, and \
+spec.toml doesn't set `paths.registry`, so the set doesn't hold a registry entry of it
+";
 
 /// A registry of comment lines alone.
 const COMMENTS: &str = include_str!("fixtures/46-registry/cases/comments.toml");
@@ -111,14 +152,10 @@ fn the_fixture_reads_its_registry_from_spec_toml() {
 }
 
 #[test]
-fn a_registry_of_comment_lines_alone_or_empty_passes() {
+fn a_registry_of_comment_lines_alone_or_empty_holds_no_entry() {
     for text in [COMMENTS, ""] {
         let report = check(&with_registry(text));
-        assert!(
-            report.findings.is_empty(),
-            "{text:?}: {}",
-            lines(&report.findings)
-        );
+        assert_eq!(lines(&report.findings), NO_ENTRY_EXPECTED, "{text:?}");
     }
 }
 
@@ -134,13 +171,11 @@ fn each_broken_entry_fails_at_its_line() {
 }
 
 #[test]
-fn a_missing_registry_fails_at_its_path() {
+fn a_missing_registry_fails_at_its_path_and_at_each_format_of_the_kind_table() {
     let mut tree = fixture();
     tree.files.remove(REGISTRY);
     let report = check(&tree);
-    let expected = "error[registry] registry/identifiers.toml:1: the registry file that \
-                    `paths.registry` states is missing\n";
-    assert_eq!(lines(&report.findings), expected);
+    assert_eq!(lines(&report.findings), MISSING_EXPECTED);
     assert!(report.failed());
 }
 
@@ -180,7 +215,7 @@ fn a_set_without_paths_registry_doesnt_read_a_registry() {
             Some(text) => tree.files.insert(REGISTRY.to_string(), ByteVec::from(text)),
         };
         let report = check(&tree);
-        assert!(report.findings.is_empty(), "{}", lines(&report.findings));
+        assert_eq!(lines(&report.findings), UNREGISTERED_EXPECTED, "{text:?}");
     }
 }
 
@@ -257,10 +292,15 @@ fn a_change_of_each_kept_field_fails_the_diff() {
 
 #[test]
 fn a_change_that_adds_an_entry_or_changes_defined_by_passes_the_diff() {
-    let added = "\n[[entry]]\ncode = \"r\"\nidentifies = \"a reply\"\nformat = 1\n\
+    // The change adds format 3 to the kind table, and the entry `r` of that format.
+    let added = "\n[[entry]]\ncode = \"r\"\nidentifies = \"a greeting\"\nformat = 3\n\
                  body_length = { min = 4, max = 4 }\ndefined_by = \"EX-0001-002\"\n";
     let defined_by = ENTRIES.replacen("\"EX-0001-001\"", "\"EX-0001-002\"", 1);
-    let head = with_registry(&format!("{defined_by}{added}"));
+    let mut head = with_registry(&format!("{defined_by}{added}"));
+    let section = GREETING.replacen("formats = [1, 2]", "formats = [1, 2, 3]", 1);
+    assert_ne!(section, GREETING, "the section file holds the formats");
+    head.files
+        .insert(SECTION.to_string(), ByteVec::from(section));
     let changes = partimento::diff(&fixture(), &head).expect("the change keeps each entry");
     assert!(changes.is_empty(), "{changes:?}");
     assert!(
