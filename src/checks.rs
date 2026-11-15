@@ -1499,20 +1499,10 @@ last = 99
 
     /// A set whose section file at [`GREETING`] holds `requirements`.
     fn set_of(requirements: Vec<Block>) -> Set {
-        let section = Section {
-            file: GREETING.to_owned(),
-            line: 1,
-            fields: Vec::new(),
-            requirements,
-            kinds: Vec::new(),
-        };
-        let rfc = Rfc {
-            dir: "rfcs/0001-greetings".to_owned(),
-            meta_file: "rfcs/0001-greetings/rfc.toml".to_owned(),
-            number: 1,
-            meta: None,
-            sections: vec![section],
-        };
+        let mut section = Section::new(GREETING.to_owned(), 1);
+        section.requirements = requirements;
+        let mut rfc = Rfc::new("rfcs/0001-greetings".to_owned(), 1);
+        rfc.sections.push(section);
         Set {
             index: None,
             rfcs: vec![rfc],

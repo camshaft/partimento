@@ -80,6 +80,22 @@ pub struct Rfc {
     pub sections: Vec<Section>,
 }
 
+impl Rfc {
+    /// The RFC of number `number` whose directory is `dir`, before the directory's files are
+    /// read: its rfc.toml's path is `<dir>/rfc.toml`, and it doesn't hold an rfc.toml or a
+    /// section yet.
+    pub fn new(dir: String, number: u32) -> Self {
+        let meta_file = format!("{dir}/{RFC}");
+        Self {
+            dir,
+            meta_file,
+            number,
+            meta: None,
+            sections: Vec::new(),
+        }
+    }
+}
+
 /// A value and the line of the file that holds it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Located<T> {
@@ -154,6 +170,19 @@ pub struct Field {
 }
 
 impl Section {
+    /// The section file at `file` whose `[section]` table is at line `line`, 1 where the file
+    /// doesn't hold one, before its tables are read: it doesn't hold a field, a requirement or a
+    /// kind table yet.
+    pub fn new(file: String, line: u32) -> Self {
+        Self {
+            file,
+            line,
+            fields: Vec::new(),
+            requirements: Vec::new(),
+            kinds: Vec::new(),
+        }
+    }
+
     /// The section's field of that key.
     pub fn field(&self, key: &str) -> Option<&Field> {
         find(&self.fields, key)
@@ -278,14 +307,7 @@ pub(crate) fn load_cached<C: Cache>(
             findings.push(Finding::error(LAYOUT, &file, 1, None, message));
             continue;
         };
-        let meta_file = format!("{path}/{RFC}");
-        let mut rfc = Rfc {
-            dir: path,
-            meta_file,
-            number,
-            meta: None,
-            sections: Vec::new(),
-        };
+        let mut rfc = Rfc::new(path, number);
         let mut has_meta = false;
         for (name, bytes) in files {
             let file = format!("{}/{name}", rfc.dir);
@@ -495,7 +517,7 @@ fn read_fields(table: RawTable, lines: &source::Lines) -> Vec<Field> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, load_index, Field, Located, Set, State, INDEX_STATE, LAYOUT};
+    use super::{load, load_index, Field, Located, Rfc, Section, Set, State, INDEX_STATE, LAYOUT};
     use crate::{config, ByteVec, Finding, Tree};
 
     /// The configuration of the tests' set.
@@ -614,5 +636,26 @@ state = "planned"
         let message = "RFC 2's state follows from its directory, so the row can leave out `state`";
         let warning = Finding::warning(INDEX_STATE, "rfcs/index.toml", 10, None, message);
         assert_eq!(findings, [warning]);
+    }
+
+    #[test]
+    fn a_new_rfc_holds_its_rfc_toml_path_and_no_file_read() {
+        let rfc = Rfc::new("rfcs/0001-greetings".to_owned(), 1);
+        assert_eq!(rfc.dir, "rfcs/0001-greetings");
+        assert_eq!(rfc.meta_file, "rfcs/0001-greetings/rfc.toml");
+        assert_eq!(rfc.number, 1);
+        assert!(rfc.meta.is_none());
+        assert!(rfc.sections.is_empty());
+    }
+
+    #[test]
+    fn a_new_section_holds_its_file_and_line_and_no_table() {
+        let file = "rfcs/0001-greetings/01-greeting.toml";
+        let section = Section::new(file.to_owned(), 3);
+        assert_eq!(section.file, file);
+        assert_eq!(section.line, 3);
+        assert!(section.fields.is_empty());
+        assert!(section.requirements.is_empty());
+        assert!(section.kinds.is_empty());
     }
 }
