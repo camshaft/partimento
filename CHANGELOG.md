@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/camshaft/partimento/compare/v0.5.0...v0.5.1) - 2026-11-15
+
+### Fixed
+
+- a head whose registry doesn't read fails the diff ([#83](https://github.com/camshaft/partimento/pull/83))
+
+### Other
+
+- a registry format that is a text, and a min that isn't a whole number ([#82](https://github.com/camshaft/partimento/pull/82))
+- check a registry under a directory that is a symbolic link ([#81](https://github.com/camshaft/partimento/pull/81))
+
 ## [0.5.0](https://github.com/camshaft/partimento/compare/v0.4.2...v0.5.0) - 2026-11-15
 
 ### Added
