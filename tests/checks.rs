@@ -83,6 +83,9 @@ const FIXTURES: &[Fixture] = &[
     ),
     fixture!("38-permissive-level"),
     fixture!("39-binding-and-rationale"),
+    fixture!("41-permissive-cycle"),
+    fixture!("42-permissive-polarity"),
+    fixture!("43-permissive-condition"),
 ];
 
 /// The listed fixture of that name.
