@@ -1,0 +1,41 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting when it starts."
+logic = ["!EX-0001-002"]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print a banner when it starts."
+conditions = ["EX-0001-001"]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-003"
+level = "MAY"
+polarity = "required"
+statement = "The program MAY print the banner in color."
+conditions = ["EX-0001-002"]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-004"
+level = "SHOULD"
+polarity = "required"
+statement = "The program SHOULD print the banner in bold."
+conditions = ["EX-0001-002"]
