@@ -3,9 +3,11 @@
 //! requirement and no kind table, and whose registry holds an entry of each format of each kind:
 //! the check of the fixture, of a registry that doesn't hold an entry of a format of a kind table,
 //! of a set whose spec.toml doesn't set `paths.registry`, of a set without its registry file, of
-//! entries that don't match the kind tables, of kind tables that each break one rule of their
-//! fields, and of a kind table whose name an earlier one holds; and a check through a cache, which
-//! reads the kind tables from the section file's cached load.
+//! entries that don't match the kind tables, of an entry whose format or defined_by the entry
+//! check reports, which isn't compared with the kind tables, of kind tables that each break one
+//! rule of their fields, of a kind table whose name an earlier one holds, and of two tables of one
+//! name in two section files; and a check through a cache, which reads the kind tables from the
+//! section file's cached load.
 //!
 //! The library's tests build each tree in memory from files embedded at compile time, so they
 //! read no file and run on wasm32 too.
@@ -91,6 +93,42 @@ rfcs/0001-greetings/01-greeting.toml:8 holds the name `a greeting` too
 error[registry] rfcs/0001-greetings/01-greeting.toml:18: the kind `a greeting` has format 3, and \
 the registry `registry/identifiers.toml` doesn't hold an entry of identifies `a greeting` and \
 format 3
+";
+
+/// The path of the fixture's second section file, which holds EX-0001-003 alone.
+const SECOND_SECTION: &str = "rfcs/0001-greetings/02-parting.toml";
+
+/// The text of the fixture's second section file.
+const PARTING: &str = include_str!("fixtures/47-kinds/rfcs/0001-greetings/02-parting.toml");
+
+/// The text of the fixture's registry, whose entry `f` holds its defined_by `EX-0001-002` at
+/// line 22, its last line.
+const IDENTIFIERS: &str = include_str!("fixtures/47-kinds/registry/identifiers.toml");
+
+/// The findings of the fixture whose registry entry `f` names in its defined_by, at line 22,
+/// `EX-0001-009`, which isn't the identifier of a requirement of the set: the entry check's
+/// finding alone, since the check doesn't compare a defined_by that the entry check reports with
+/// the kind tables.
+const UNHELD_EXPECTED: &str = "\
+error[registry] registry/identifiers.toml:22: defined_by is `EX-0001-009`, which no requirement \
+of a written RFC holds
+";
+
+/// The findings of the fixture whose registry holds, after entry `f`, an entry `z` of the kind
+/// `a farewell` whose format, at line 27, is 0: the entry check's finding alone, since the check
+/// doesn't compare a format that the entry check reports with the kind tables.
+const FORMAT_ZERO_EXPECTED: &str = "\
+error[registry] registry/identifiers.toml:27: format is 0, which isn't a whole number of at least 1
+";
+
+/// The findings of the fixture whose second section file holds a kind table at line 8 whose name
+/// `a greeting` the first section file's kind table at line 8 holds too, with formats 1 and 2,
+/// and whose registry entry `g` names in its defined_by EX-0001-003, a requirement of the second
+/// section file: the repeated name alone, since a defined_by of the section file of either kind
+/// table of one name passes.
+const TWO_FILES_EXPECTED: &str = "\
+error[kind] rfcs/0001-greetings/02-parting.toml:9: the kind table at \
+rfcs/0001-greetings/01-greeting.toml:8 holds the name `a greeting` too
 ";
 
 /// A registry that holds entry `g` alone.
@@ -248,6 +286,50 @@ fn a_kind_table_whose_name_an_earlier_one_holds_fails_at_each_format_without_an_
     assert_ne!(section, GREETING, "the section file holds a requirement");
     let report = check(&with_file(SECTION, &section));
     assert_eq!(lines(&report.findings), REPEATED_EXPECTED);
+    assert!(report.failed());
+}
+
+#[test]
+fn a_defined_by_that_the_entry_check_reports_isnt_compared_with_the_kind_tables() {
+    let (held, unheld) = ("defined_by = \"EX-0001-002\"", "defined_by = \"EX-0001-009\"");
+    let registry = IDENTIFIERS.replacen(held, unheld, 1);
+    assert_ne!(registry, IDENTIFIERS, "entry `f` holds EX-0001-002");
+    let report = check(&with_file(REGISTRY, &registry));
+    assert_eq!(lines(&report.findings), UNHELD_EXPECTED);
+    assert!(report.failed());
+}
+
+#[test]
+fn a_format_that_the_entry_check_reports_isnt_compared_with_the_kind_tables() {
+    let last = "defined_by = \"EX-0001-002\"";
+    let entry = [
+        "[[entry]]",
+        "code = \"z\"",
+        "identifies = \"a farewell\"",
+        "format = 0",
+        "body_length = { min = 8, max = 8 }",
+        last,
+    ];
+    let zero = entry.join("\n");
+    let registry = IDENTIFIERS.replacen(last, &format!("{last}\n\n{zero}"), 1);
+    assert_ne!(registry, IDENTIFIERS, "entry `f` holds EX-0001-002");
+    let report = check(&with_file(REGISTRY, &registry));
+    assert_eq!(lines(&report.findings), FORMAT_ZERO_EXPECTED);
+    assert!(report.failed());
+}
+
+#[test]
+fn a_defined_by_of_the_section_file_of_either_kind_table_of_one_name_passes() {
+    let repeated = "\n[[kind]]\nname = \"a greeting\"\nformats = [1, 2]\n\n[[requirement]]\n";
+    let parting = PARTING.replacen("\n[[requirement]]\n", repeated, 1);
+    assert_ne!(parting, PARTING, "the second section file holds a requirement");
+    let (first, second) = ("defined_by = \"EX-0001-001\"", "defined_by = \"EX-0001-003\"");
+    let registry = IDENTIFIERS.replacen(first, second, 1);
+    assert_ne!(registry, IDENTIFIERS, "entry `g` holds EX-0001-001");
+    let mut tree = with_file(SECOND_SECTION, &parting);
+    tree.files.insert(REGISTRY.to_string(), ByteVec::from(registry));
+    let report = check(&tree);
+    assert_eq!(lines(&report.findings), TWO_FILES_EXPECTED);
     assert!(report.failed());
 }
 
