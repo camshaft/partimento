@@ -1494,6 +1494,11 @@ last = 99
             ];
             requirements.push(Block { line, fields });
         }
+        set_of(requirements)
+    }
+
+    /// A set whose section file at [`GREETING`] holds `requirements`.
+    fn set_of(requirements: Vec<Block>) -> Set {
         let section = Section {
             file: GREETING.to_owned(),
             line: 1,
@@ -1647,6 +1652,52 @@ last = 99
         }
     }
 
+    /// A composition under `exactly_one` at the permissive level doesn't add a formula, so a
+    /// later formula of the exclusion's form, at the index its exclusion would have taken, shows
+    /// whole in a finding of check 1.
+    fn a_permissive_composition_leaves_later_formulas_whole<B: Backend + Default>() {
+        let text = |value: &str| Value::String(value.to_owned());
+        let rule = "EX-0001-004 -> exactly_one(EX-0001-002, EX-0001-003, EX-0001-005)";
+        let both = "EX-0001-002 & EX-0001-003";
+        let composition = vec![
+            field("id", 10, text(&id(1))),
+            field("level", 11, text("MAY")),
+            field("compose", 14, text("exactly_one")),
+            field("parts", 15, Value::Array(vec![text(&id(2)), text(&id(3))])),
+        ];
+        let logic = |line: u32, n: usize, formula: &str| {
+            let formulas = Value::Array(vec![text(formula)]);
+            vec![
+                field("id", line, text(&id(n))),
+                field("logic", line + 4, formulas),
+            ]
+        };
+        let blocks = [
+            (10, composition),
+            (20, vec![field("id", 20, text(&id(2)))]),
+            (30, vec![field("id", 30, text(&id(3)))]),
+            (40, logic(40, 4, rule)),
+            (50, logic(50, 5, both)),
+        ];
+        let requirements = blocks
+            .into_iter()
+            .map(|(line, fields)| Block { line, fields })
+            .collect();
+        let mut findings = Vec::new();
+        check::<B>(&config(), &set_of(requirements), &mut findings);
+        let shown = |formula: &str| format!("`{}`", parse(formula).unwrap());
+        let own = shown(&id(4));
+        let rule = shown(rule);
+        let both = shown(both);
+        let (own, rule, both) = (own.as_str(), rule.as_str(), both.as_str());
+        let expected = [
+            conflict(40, &id(4), own, &[(rule, 44), (both, 54)]),
+            conflict(44, &id(4), rule, &[(own, 40), (both, 54)]),
+            conflict(54, &id(5), both, &[(own, 40), (rule, 44)]),
+        ];
+        assert_eq!(findings, expected);
+    }
+
     crate::solver::backend_tests!(
         empty_set,
         a_consistent_result_is_read_from_the_cache,
@@ -1662,5 +1713,6 @@ last = 99
         condition_vacuous_through_exactly_one,
         wide_composition,
         a_conflict_shows_the_parts_it_names,
+        a_permissive_composition_leaves_later_formulas_whole,
     );
 }
