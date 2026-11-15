@@ -1,0 +1,22 @@
+# The registry of identifier kinds: one entry for each format of each kind table of the set.
+
+[[entry]]
+code = "g"
+identifies = "a greeting"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-001"
+
+[[entry]]
+code = "h"
+identifies = "a greeting"
+format = 2
+body_length = { min = 8, max = 12 }
+defined_by = "EX-0001-001"
+
+[[entry]]
+code = "f"
+identifies = "a farewell"
+format = 1
+body_length = { min = 8, max = 8 }
+defined_by = "EX-0001-002"

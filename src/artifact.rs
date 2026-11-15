@@ -501,8 +501,13 @@ impl Writer {
         self.text(&section.file);
         self.u32(section.line);
         self.fields(&section.fields);
-        self.count(section.requirements.len());
-        for block in &section.requirements {
+        self.blocks(&section.requirements);
+        self.blocks(&section.kinds);
+    }
+
+    fn blocks(&mut self, blocks: &[Block]) {
+        self.count(blocks.len());
+        for block in blocks {
             self.u32(block.line);
             self.fields(&block.fields);
         }
@@ -655,11 +660,13 @@ impl<'a> Reader<'a> {
         let line = self.u32()?;
         let fields = self.fields()?;
         let requirements = self.list(Self::block)?;
+        let kinds = self.list(Self::block)?;
         Some(Section {
             file,
             line,
             fields,
             requirements,
+            kinds,
         })
     }
 
@@ -724,8 +731,8 @@ array = [1, "two", [3.0, false]]
 table = { key = "value", nested = { list = [] } }
 "#;
 
-    /// A section whose `[section]` table and first block hold the fields of `values`, each at a
-    /// line of its own, and whose second block has no field.
+    /// A section whose `[section]` table, first block and kind table hold the fields of `values`,
+    /// each at a line of its own, and whose second block has no field.
     fn section(values: &str) -> Section {
         let table: toml::Table = toml::from_str(values).expect("the test's values parse");
         let fields = |first: u32| -> Vec<Field> {
@@ -752,6 +759,10 @@ table = { key = "value", nested = { list = [] } }
                     fields: Vec::new(),
                 },
             ],
+            kinds: vec![Block {
+                line: 60,
+                fields: fields(61),
+            }],
         }
     }
 

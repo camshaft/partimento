@@ -1,0 +1,69 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+prose = "The program greets the person who starts it."
+
+[[kind]]
+name = "a greeting"
+formats = [1, 2]
+
+[[kind]]
+name = "a farewell"
+formats = [1]
+
+# A kind table that holds a field other than name and formats.
+[[kind]]
+name = "a wave"
+formats = [1]
+status = "draft"
+
+# A kind table without formats.
+[[kind]]
+name = "a nod"
+
+# A kind table without a name.
+[[kind]]
+formats = [1]
+
+# A name that isn't a text.
+[[kind]]
+name = 7
+formats = [1]
+
+# A name that the first kind table holds.
+[[kind]]
+name = "a greeting"
+formats = [3]
+
+# Formats that aren't a list.
+[[kind]]
+name = "a bow"
+formats = 1
+
+# Formats that are an empty list.
+[[kind]]
+name = "a smile"
+formats = []
+
+# Formats that hold a number less than 1, a text, and one number twice.
+[[kind]]
+name = "a hug"
+formats = [0, "1", 2, 2]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print \"hello\" when it starts."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "forbidden"
+statement = "The program MUST NOT print the greeting to the error stream."
