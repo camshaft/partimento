@@ -92,9 +92,8 @@ fn run(args: &Args) -> Result<ExitCode, String> {
         }
         Command::Diff(base, head) => {
             let (base, head) = (read_tree(base)?, read_tree(head)?);
-            match partimento::diff(&base, &head) {
-                Ok(changes) => {
-                    let versions = partimento::contract_versions(&base, &head).unwrap_or_default();
+            match partimento::diff_with_versions(&base, &head) {
+                Ok((changes, versions)) => {
                     (changes_output(&changes, &versions, args.format), false)
                 }
                 Err(findings) => (findings_output(&findings, args.format), true),

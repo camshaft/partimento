@@ -247,6 +247,26 @@ fn diff_findings(base: &Tree, head: &Tree) -> String {
 }
 
 #[test]
+fn diff_with_versions_lists_each_change_of_fixture_15() {
+    let (base, head) = (tree_of(DIFF_BASE), tree_of(DIFF_HEAD));
+    let found = partimento::diff_with_versions(&base, &head);
+    let (changes, versions) = found.expect("both trees pass the format rules");
+    assert_eq!(each_line(&changes), DIFF_EXPECTED);
+    assert!(versions.is_empty(), "{}", each_line(&versions));
+}
+
+#[test]
+fn diff_with_versions_of_a_failing_tree_returns_the_findings_of_diff() {
+    let fixture = named("02-duplicate-identifier");
+    let (failing, passing) = (tree(fixture), tree_of(DIFF_BASE));
+    for (base, head) in [(&failing, &passing), (&passing, &failing)] {
+        let found = partimento::diff_with_versions(base, head);
+        let found = found.expect_err("a tree fails the format rules");
+        assert_eq!(each_line(&found), diff_findings(base, head));
+    }
+}
+
+#[test]
 fn each_fixture_holds_its_expected_findings() {
     let mut failures = Vec::new();
     for fixture in FIXTURES {
