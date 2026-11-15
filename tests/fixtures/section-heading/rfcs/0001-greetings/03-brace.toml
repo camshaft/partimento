@@ -5,6 +5,8 @@ problem = "A person who answers the greeting doesn't know that the program read 
 motivation = "A reply tells the person that the program read their answer."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MAY"
 polarity = "required"

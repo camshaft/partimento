@@ -1,0 +1,5 @@
+number = 2
+title = "Farewells"
+area = "contracts"
+abstract = "How the program says goodbye."
+retired = []

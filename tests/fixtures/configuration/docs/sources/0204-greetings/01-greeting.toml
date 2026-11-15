@@ -5,18 +5,24 @@ problem = "A person who starts the program doesn't know that it runs."
 motivation = "A greeting tells the person that the program runs."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "ZQ-0204-001"
 level = "SHALL"
 polarity = "required"
 statement = "The program SHALL greet the person when it starts."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "ZQ-0204-002"
 level = "OUGHT"
 polarity = "forbidden"
 statement = "The program OUGHT NOT greet the person twice."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "ZQ-0204-003"
 level = "CAN"
 polarity = "required"

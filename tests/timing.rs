@@ -31,6 +31,7 @@ first = 1
 last = 99
 
 [contracts]
+name = "contracts"
 first = 100
 last = 199
 "#;
@@ -76,6 +77,8 @@ fn requirement(rfc: usize, part: usize, k: usize) -> String {
         "level = \"MUST\"".to_string(),
         "polarity = \"required\"".to_string(),
         format!("statement = \"The program MUST record event {n} of part {part}.\""),
+        "binds_to = \"system\"".to_string(),
+        "rationale = \"The tests need this requirement.\"".to_string(),
     ];
     let mut relations = Vec::new();
     if k > 1 {

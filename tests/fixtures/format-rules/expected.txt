@@ -1,8 +1,8 @@
 error[field-value] rfcs/0001-greetings/02-broken.toml:6: `prose` is a string
-error[identifier-form] rfcs/0001-greetings/02-broken.toml:9: EX-1-1: the identifier isn't EX-<rfc>-<n>, <rfc> four digits and <n> three or more
-error[identifier-retired] rfcs/0001-greetings/02-broken.toml:15: EX-0001-003: the identifier is retired at rfcs/0001-greetings/rfc.toml:6
-error[field-missing] rfcs/0001-greetings/02-broken.toml:20: EX-0001-004: the requirement block doesn't hold `statement`
-error[field-value] rfcs/0001-greetings/02-broken.toml:27: EX-0001-005: `level` is a string
-error[field-value] rfcs/0001-greetings/02-broken.toml:30: EX-0001-005: `conditions` is an array of strings
+error[identifier-form] rfcs/0001-greetings/02-broken.toml:11: EX-1-1: the identifier isn't EX-<rfc>-<n>, <rfc> four digits and <n> three or more
+error[identifier-retired] rfcs/0001-greetings/02-broken.toml:19: EX-0001-003: the identifier is retired at rfcs/0001-greetings/rfc.toml:6
+error[field-missing] rfcs/0001-greetings/02-broken.toml:24: EX-0001-004: the requirement block doesn't hold `statement`
+error[field-value] rfcs/0001-greetings/02-broken.toml:35: EX-0001-005: `level` is a string
+error[field-value] rfcs/0001-greetings/02-broken.toml:38: EX-0001-005: `conditions` is an array of strings
 error[identifier-retired] rfcs/0001-greetings/rfc.toml:7: EX-0002-001: RFC 1 retires an identifier of RFC 2
 error[identifier-form] rfcs/0001-greetings/rfc.toml:8: EX-9: the identifier isn't EX-<rfc>-<n>, <rfc> four digits and <n> three or more

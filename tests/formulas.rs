@@ -115,10 +115,10 @@ fn each_relation_states_a_formula_with_its_kind_and_its_target() {
         ];
         assert_eq!(report.formulas.atoms, atoms, "{backend}");
         let formulas = [
-            "8 EX-0001-001: EX-0001-001",
-            "12 EX-0001-001: (EX-0001-001 -> EX-0001-009) (depends_on EX-0001-009)",
-            "15 EX-0001-002: EX-0001-002",
-            "19 EX-0001-002: (EX-0001-002 -> EX-0002-001) (depends_on EX-0002-001)",
+            "10 EX-0001-001: EX-0001-001",
+            "14 EX-0001-001: (EX-0001-001 -> EX-0001-009) (depends_on EX-0001-009)",
+            "19 EX-0001-002: EX-0001-002",
+            "23 EX-0001-002: (EX-0001-002 -> EX-0002-001) (depends_on EX-0002-001)",
         ];
         assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
         assert!(report.formulas.conditions.is_empty(), "{backend}");
@@ -139,13 +139,13 @@ fn a_composition_logic_and_a_condition_state_their_formulas() {
         ];
         assert_eq!(report.formulas.atoms, atoms, "{backend}");
         let formulas = [
-            "8 EX-0001-001: EX-0001-001",
-            "12 EX-0001-001: (EX-0001-001 <-> (EX-0001-002 | EX-0001-003))",
-            "14 EX-0001-001: !EX-0001-003",
-            "33 EX-0001-004: (EX-0001-003 -> EX-0001-004)",
+            "10 EX-0001-001: EX-0001-001",
+            "14 EX-0001-001: (EX-0001-001 <-> (EX-0001-002 | EX-0001-003))",
+            "16 EX-0001-001: !EX-0001-003",
+            "41 EX-0001-004: (EX-0001-003 -> EX-0001-004)",
         ];
         assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
-        let conditions = ["33 EX-0001-004: EX-0001-003"];
+        let conditions = ["41 EX-0001-004: EX-0001-003"];
         assert_eq!(condition_lines(&report.formulas), conditions, "{backend}");
     }
 }
@@ -163,10 +163,10 @@ fn a_conflicts_with_relation_states_the_negation_of_both() {
         ];
         assert_eq!(report.formulas.atoms, atoms, "{backend}");
         let formulas = [
-            "8 EX-0001-001: EX-0001-001",
-            "14 EX-0001-002: EX-0001-002",
-            "18 EX-0001-002: !(EX-0001-002 & EX-0001-001) (conflicts_with EX-0001-001)",
-            "21 EX-0001-003: EX-0001-003",
+            "10 EX-0001-001: EX-0001-001",
+            "18 EX-0001-002: EX-0001-002",
+            "22 EX-0001-002: !(EX-0001-002 & EX-0001-001) (conflicts_with EX-0001-001)",
+            "27 EX-0001-003: EX-0001-003",
         ];
         assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
         assert!(report.formulas.conditions.is_empty(), "{backend}");
@@ -187,9 +187,9 @@ fn a_logic_exactly_one_states_its_parts_in_order() {
         ];
         assert_eq!(report.formulas.atoms, atoms, "{backend}");
         let formulas = [
-            "8 EX-0001-001: EX-0001-001",
-            "12 EX-0001-001: (EX-0001-001 <-> (EX-0001-002 | EX-0001-003 | EX-0001-004))",
-            "14 EX-0001-001: exactly_one(EX-0001-002, EX-0001-003, !EX-0001-004)",
+            "10 EX-0001-001: EX-0001-001",
+            "14 EX-0001-001: (EX-0001-001 <-> (EX-0001-002 | EX-0001-003 | EX-0001-004))",
+            "16 EX-0001-001: exactly_one(EX-0001-002, EX-0001-003, !EX-0001-004)",
         ];
         assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
         assert!(report.formulas.conditions.is_empty(), "{backend}");
@@ -205,10 +205,10 @@ fn implies_and_refines_relations_state_an_implication() {
         let atoms = [held("EX-0001-001", "MUST"), held("EX-0001-002", "SHOULD")];
         assert_eq!(report.formulas.atoms, atoms, "{backend}");
         let formulas = [
-            "8 EX-0001-001: EX-0001-001",
-            "12 EX-0001-001: (EX-0001-001 -> EX-0001-002) (implies EX-0001-002)",
-            "15 EX-0001-002: EX-0001-002",
-            "19 EX-0001-002: (EX-0001-002 -> EX-0001-001) (refines EX-0001-001)",
+            "10 EX-0001-001: EX-0001-001",
+            "14 EX-0001-001: (EX-0001-001 -> EX-0001-002) (implies EX-0001-002)",
+            "19 EX-0001-002: EX-0001-002",
+            "23 EX-0001-002: (EX-0001-002 -> EX-0001-001) (refines EX-0001-001)",
         ];
         assert_eq!(formula_lines(&report.formulas), formulas, "{backend}");
     }

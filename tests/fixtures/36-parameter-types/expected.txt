@@ -1,0 +1,11 @@
+error[parameter] rfcs/0001-greetings/01-greeting.toml:14: EX-0001-001: a `duration` parameter's `unit` is `s`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:23: EX-0001-002: a `size` parameter's `unit` is `B`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:32: EX-0001-003: a `count` parameter doesn't hold a `unit`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:41: EX-0001-004: a parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:50: EX-0001-005: a `count` parameter's `value` is a whole number
+error[parameter] rfcs/0001-greetings/01-greeting.toml:59: EX-0001-006: a `fraction`'s `value` is from 0 to 1, and 1.5 isn't
+error[parameter] rfcs/0001-greetings/01-greeting.toml:68: EX-0001-007: `greeting.share` is a `count`, and a `fraction` at rfcs/0001-greetings/01-greeting.toml:59
+error[parameter] rfcs/0001-greetings/01-greeting.toml:77: EX-0001-008: `reply.wait` holds a `value` and a `source`, and not both
+error[parameter] rfcs/0001-greetings/01-greeting.toml:86: EX-0001-009: `reply.rate` holds neither `value` nor `source`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:95: EX-0001-010: no contract's RFC holds a parameter `reply.limit`
+error[parameter] rfcs/0001-greetings/01-greeting.toml:104: EX-0001-011: a parameter's `source` is `deployment` or `contract`

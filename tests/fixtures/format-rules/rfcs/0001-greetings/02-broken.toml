@@ -6,23 +6,31 @@ motivation = "Each finding names the line that breaks a rule."
 prose = 3
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-1-1"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print a farewell when it stops."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-003"
 level = "MUST"
 polarity = "required"
 statement = "The program MUST print the farewell once."
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-004"
 level = "MUST"
 polarity = "required"
 
 [[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
 id = "EX-0001-005"
 level = 1
 polarity = "required"

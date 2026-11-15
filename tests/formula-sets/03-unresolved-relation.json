@@ -6,10 +6,10 @@
 {"id":"EX-0002-001","rfc":2,"section":null,"level":null,"polarity":null}
 ],
 "formulas": [
-{"formula":{"atom":"EX-0001-001"},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":8},"relation":null},
-{"formula":{"implies":[{"atom":"EX-0001-001"},{"atom":"EX-0001-009"}]},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":12},"relation":{"kind":"depends_on","target":"EX-0001-009"}},
-{"formula":{"atom":"EX-0001-002"},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":15},"relation":null},
-{"formula":{"implies":[{"atom":"EX-0001-002"},{"atom":"EX-0002-001"}]},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":19},"relation":{"kind":"depends_on","target":"EX-0002-001"}}
+{"formula":{"atom":"EX-0001-001"},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":10},"relation":null},
+{"formula":{"implies":[{"atom":"EX-0001-001"},{"atom":"EX-0001-009"}]},"origin":{"requirement":"EX-0001-001","file":"rfcs/0001-greetings/01-greeting.toml","line":14},"relation":{"kind":"depends_on","target":"EX-0001-009"}},
+{"formula":{"atom":"EX-0001-002"},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":19},"relation":null},
+{"formula":{"implies":[{"atom":"EX-0001-002"},{"atom":"EX-0002-001"}]},"origin":{"requirement":"EX-0001-002","file":"rfcs/0001-greetings/01-greeting.toml","line":23},"relation":{"kind":"depends_on","target":"EX-0002-001"}}
 ],
 "conditions": []
 }

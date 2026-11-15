@@ -1,0 +1,8 @@
+error[area] rfcs/0002-farewells/rfc.toml:3: RFC 2 is outside group `contracts`, which holds RFCs 100 to 199
+error[area] rfcs/0003-replies/rfc.toml:3: the area `nowhere` isn't the name of a group of spec.toml
+error[index-agreement] rfcs/0003-replies/rfc.toml:3: the area is `nowhere`, and the index lists `platform`
+error[contract-version] rfcs/0101-handoff/rfc.toml:1: RFC 101, a contract, doesn't hold `contract_version`
+error[index-agreement] rfcs/0101-handoff/rfc.toml:2: the title is `Handoffs`, and the index lists `Handoff`
+error[contract-version] rfcs/0102-relay/rfc.toml:4: `contract_version` is 1 or more, and 0 isn't
+error[contract-version] rfcs/0900-base/rfc.toml:4: only a contract's RFC holds `contract_version`
+error[area] rfcs/index.toml:9: RFC 2 is outside group `contracts`, which holds RFCs 100 to 199

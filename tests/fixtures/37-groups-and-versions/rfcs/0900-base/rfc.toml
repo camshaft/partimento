@@ -1,0 +1,6 @@
+number = 900
+title = "Base"
+area = "foundation"
+contract_version = 1
+abstract = "The terms every RFC uses."
+retired = []

@@ -1,0 +1,34 @@
+[[rfc]]
+number = 1
+title = "Greetings"
+area = "platform"
+
+[[rfc]]
+number = 2
+title = "Farewells"
+area = "contracts"
+
+[[rfc]]
+number = 3
+title = "Replies"
+area = "platform"
+
+[[rfc]]
+number = 100
+title = "Transfer"
+area = "contracts"
+
+[[rfc]]
+number = 101
+title = "Handoff"
+area = "contracts"
+
+[[rfc]]
+number = 102
+title = "Relay"
+area = "contracts"
+
+[[rfc]]
+number = 900
+title = "Base"
+area = "foundation"

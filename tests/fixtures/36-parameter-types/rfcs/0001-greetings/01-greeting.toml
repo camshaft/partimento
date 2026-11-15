@@ -1,0 +1,118 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting within 30 seconds of its start."
+params = [{ name = "wait.time", bound = "max", type = "duration", unit = "ms", value = 30 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a reply of at most 512 bytes."
+params = [{ name = "reply.size", bound = "max", type = "size", value = 512 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print at most 3 greetings."
+params = [{ name = "greeting.count", bound = "max", type = "count", unit = "B", value = 3 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-004"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the greeting at most 3 times as fast as the reply."
+params = [{ name = "greeting.speed", bound = "max", type = "speed", value = 3 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-005"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a greeting of at most 2.5 lines."
+params = [{ name = "greeting.lines", bound = "max", type = "count", value = 2.5 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-006"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST greet at most 1.5 of the people who start it."
+params = [{ name = "greeting.share", bound = "max", type = "fraction", value = 1.5 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-007"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST greet at least one person."
+params = [{ name = "greeting.share", bound = "min", type = "count", value = 1 }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-008"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a reply within the wait the deployment sets."
+params = [{ name = "reply.wait", bound = "max", type = "duration", unit = "s", value = 5, source = "deployment" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-009"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print replies at a bounded rate."
+params = [{ name = "reply.rate", bound = "max", type = "rate", unit = "per_s" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-010"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print at most the replies the contract allows."
+params = [{ name = "reply.limit", bound = "max", type = "count", source = "contract" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-011"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print at most the replies its settings allow."
+params = [{ name = "reply.cap", bound = "max", type = "count", source = "settings" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-012"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a reply of bounded size, delay, rate and share."
+params = [
+    { name = "reply.delay", bound = "max", type = "duration", unit = "s", source = "deployment" },
+    { name = "reply.ratio", bound = "max", type = "fraction", value = 0.5 },
+    { name = "reply.burst", bound = "max", type = "rate", unit = "per_s", value = 10 },
+    { name = "reply.body", bound = "max", type = "size", unit = "B", value = 1024 },
+]

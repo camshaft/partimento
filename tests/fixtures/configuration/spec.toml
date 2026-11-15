@@ -18,5 +18,6 @@ first = 300
 last = 399
 
 [contracts]
+name = "contracts"
 first = 900
 last = 949

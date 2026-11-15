@@ -1,0 +1,4 @@
+error[field-missing] rfcs/0001-greetings/01-greeting.toml:7: EX-0001-001: the requirement block doesn't hold `binds_to`
+error[field-value] rfcs/0001-greetings/01-greeting.toml:15: EX-0001-002: `binds_to` is one of `system`, `process`, and `everyone` isn't
+error[field-missing] rfcs/0001-greetings/01-greeting.toml:22: EX-0001-003: the requirement block doesn't hold `rationale`
+error[field-value] rfcs/0001-greetings/01-greeting.toml:31: EX-0001-004: `rationale` is empty
