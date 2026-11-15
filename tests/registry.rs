@@ -81,7 +81,8 @@ fn with_registry_line(line: &str) -> Tree {
     assert!(SPEC.contains(&set), "spec.toml sets the registry");
     let spec = SPEC.replace(&set, line);
     let mut tree = fixture();
-    tree.files.insert("spec.toml".to_string(), ByteVec::from(spec));
+    tree.files
+        .insert("spec.toml".to_string(), ByteVec::from(spec));
     tree
 }
 
@@ -112,7 +113,11 @@ fn the_fixture_reads_its_registry_from_spec_toml() {
 fn a_registry_of_comment_lines_alone_or_empty_passes() {
     for text in [COMMENTS, ""] {
         let report = check(&with_registry(text));
-        assert!(report.findings.is_empty(), "{text:?}: {}", lines(&report.findings));
+        assert!(
+            report.findings.is_empty(),
+            "{text:?}: {}",
+            lines(&report.findings)
+        );
     }
 }
 
@@ -149,7 +154,12 @@ fn a_registry_that_doesnt_parse_fails_at_its_line() {
     ];
     for text in cases {
         let report = check(&with_registry(text));
-        assert_eq!(report.findings.len(), 1, "{text:?}: {}", lines(&report.findings));
+        assert_eq!(
+            report.findings.len(),
+            1,
+            "{text:?}: {}",
+            lines(&report.findings)
+        );
         let finding = &report.findings[0];
         assert_eq!(finding.rule, "parse", "{text:?}");
         assert_eq!(finding.file, REGISTRY, "{text:?}");
@@ -180,7 +190,10 @@ fn paths_registry_outside_the_tree_or_in_a_directory_of_the_set_fails() {
             "registry = \"../identifiers.toml\"",
             "`paths.registry` is `../identifiers.toml`, which isn't a file of the tree",
         ),
-        ("registry = \"\"", "`paths.registry` is ``, which isn't a file of the tree"),
+        (
+            "registry = \"\"",
+            "`paths.registry` is ``, which isn't a file of the tree",
+        ),
         (
             "registry = \"rfcs/identifiers.toml\"",
             "`paths.registry` is `rfcs/identifiers.toml`, which overlaps `paths.rfcs`, `rfcs`",
@@ -207,15 +220,26 @@ fn a_change_that_removes_or_alters_an_entry_fails_the_diff() {
         assert_eq!(finding.rule, registry::KEPT, "{finding}");
     }
     let versions = partimento::contract_versions(&base, &head);
-    assert_eq!(lines(&versions.expect_err("the change alters it")), HEAD_EXPECTED);
+    assert_eq!(
+        lines(&versions.expect_err("the change alters it")),
+        HEAD_EXPECTED
+    );
     let both = partimento::diff_with_versions(&base, &head);
-    assert_eq!(lines(&both.expect_err("the change alters it")), HEAD_EXPECTED);
+    assert_eq!(
+        lines(&both.expect_err("the change alters it")),
+        HEAD_EXPECTED
+    );
 }
 
 #[test]
 fn a_change_of_each_kept_field_fails_the_diff() {
     let cases = [
-        ("identifies = \"a greeting\"", "identifies = \"a hello\"", 5, "identifies"),
+        (
+            "identifies = \"a greeting\"",
+            "identifies = \"a hello\"",
+            5,
+            "identifies",
+        ),
         ("format = 1", "format = 3", 6, "format"),
         ("min = 8, max = 8", "min = 8, max = 10", 7, "body_length"),
     ];
@@ -238,7 +262,11 @@ fn a_change_that_adds_an_entry_or_changes_defined_by_passes_the_diff() {
     let head = with_registry(&format!("{defined_by}{added}"));
     let changes = partimento::diff(&fixture(), &head).expect("the change keeps each entry");
     assert!(changes.is_empty(), "{changes:?}");
-    assert!(check(&head).findings.is_empty(), "{}", lines(&check(&head).findings));
+    assert!(
+        check(&head).findings.is_empty(),
+        "{}",
+        lines(&check(&head).findings)
+    );
 }
 
 #[test]
