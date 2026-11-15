@@ -44,6 +44,7 @@ const GREETING: &str = "rfcs/0001-greetings/01-greeting.toml";
 type Measure = fn(&str, &Config, usize);
 
 /// Each enabled backend by its name, with the measure of its steps.
+#[allow(clippy::vec_init_then_push)]
 fn backends() -> Vec<(&'static str, Measure)> {
     let mut backends: Vec<(&'static str, Measure)> = Vec::new();
     #[cfg(feature = "batsat")]
@@ -56,7 +57,8 @@ fn backends() -> Vec<(&'static str, Measure)> {
 fn config() -> Config {
     let mut tree = Tree::default();
     let bytes = ByteVec::from(SPEC.to_owned());
-    tree.files.insert(partimento::config::FILE.to_owned(), bytes);
+    tree.files
+        .insert(partimento::config::FILE.to_owned(), bytes);
     let mut findings = Vec::new();
     let config = partimento::config::load(&tree, &mut findings);
     assert!(findings.is_empty(), "{findings:?}");
@@ -138,7 +140,10 @@ fn steps<B: Backend + Default>(backend: &str, config: &Config, parts: usize) {
 
     let start = Instant::now();
     let consistency = partimento::checks::consistency::<B>(&formula_set);
-    print("checks 1 and 2 over the check's formula set", start.elapsed());
+    print(
+        "checks 1 and 2 over the check's formula set",
+        start.elapsed(),
+    );
     assert!(consistency.conflict.is_none());
 
     let names: Vec<String> = (2..parts + 2).map(id).collect();
@@ -152,7 +157,10 @@ fn steps<B: Backend + Default>(backend: &str, config: &Config, parts: usize) {
     let start = Instant::now();
     let formulas = &formula_set.formulas;
     let same = formulas[1].formula == iff && formulas[2].formula == exclusion;
-    print("the two formulas, compared with the check's", start.elapsed());
+    print(
+        "the two formulas, compared with the check's",
+        start.elapsed(),
+    );
     assert!(same);
 
     let start = Instant::now();
@@ -173,8 +181,20 @@ fn steps<B: Backend + Default>(backend: &str, config: &Config, parts: usize) {
         ("solve 1, one part true", 0, &[middle], false, true),
         ("solve 2, two parts true", 0, &[0, parts - 1], false, false),
         ("solve 3, no part true", 0, &[], false, false),
-        ("solve 4, no part and not the requirement", 1, &[], true, true),
-        ("solve 5, one part and not the requirement", 1, &[middle], true, false),
+        (
+            "solve 4, no part and not the requirement",
+            1,
+            &[],
+            true,
+            true,
+        ),
+        (
+            "solve 5, one part and not the requirement",
+            1,
+            &[middle],
+            true,
+            false,
+        ),
     ];
     for (step, from, true_at, own_false, sat) in cases {
         let start = Instant::now();
