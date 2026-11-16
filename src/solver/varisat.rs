@@ -1,5 +1,7 @@
 //! The varisat backend, behind the `varisat` feature.
 
+use std::collections::HashSet;
+
 use super::{Answer, Backend, Lit};
 
 use ::varisat::ExtendFormula;
@@ -32,11 +34,20 @@ impl Backend for Varisat {
         match self.solver.solve() {
             Ok(true) => Answer::Sat,
             Ok(false) => {
-                let failed = self.solver.failed_core().unwrap_or(&[]);
+                // The core's variables, read into a set once, so that the filter looks each
+                // assumption up once: a search of the core for each assumption costs the
+                // assumptions times the core, n squared where the core holds every assumption.
+                let failed: HashSet<isize> = self
+                    .solver
+                    .failed_core()
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|f| f.var().to_dimacs())
+                    .collect();
                 let core = assumptions
                     .iter()
                     .copied()
-                    .filter(|&each| failed.iter().any(|f| f.var() == lit(each).var()))
+                    .filter(|&each| failed.contains(&lit(each).var().to_dimacs()))
                     .collect();
                 Answer::Unsat { core }
             }
