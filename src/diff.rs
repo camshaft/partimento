@@ -7,6 +7,10 @@
 //! read at its default and each list read as its items in any order, so that a move, a reorder of
 //! a list or a default written out isn't a change, and neither is a change of `label` or
 //! `rationale` alone.
+//!
+//! A change that adds, changes or retires a requirement of a contract RFC that both trees hold
+//! fails with the rule [`VERSION_RAISED`] where the RFC's `contract_version` in the head isn't
+//! greater than in the base, as a change of a contract's requirements raises its version.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -15,7 +19,7 @@ use serde::Serialize;
 use toml::Value;
 
 use crate::config::{self, Config};
-use crate::model::{self, Block, Set};
+use crate::model::{self, Block, Located, Rfc, Set};
 use crate::{registry, rules, Finding, Severity, Tree};
 
 /// The fields whose difference changes a requirement.
@@ -40,6 +44,10 @@ const ATOMIC: &str = "atomic";
 
 /// The binding of a block that leaves `binds_to` out.
 const SYSTEM: &str = "system";
+
+/// The rule of a change that adds, changes or retires a requirement of a contract RFC and doesn't
+/// raise the RFC's `contract_version` above the base's.
+pub const VERSION_RAISED: &str = "contract-version-raised";
 
 /// How a requirement differs between the base tree and the head tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -133,35 +141,46 @@ type Order = (Option<(u32, u32)>, String);
 
 /// Each requirement added, changed and retired from `base` to `head`, in the order of its
 /// identifier; or, where a tree fails a format rule, each finding that fails, the base's first,
-/// with its file's path after the tree's side, `base:` or `head:`.
+/// with its file's path after the tree's side, `base:` or `head:`; or, where both pass and a
+/// contract RFC's requirements change without a raise of its `contract_version`, a finding of
+/// [`VERSION_RAISED`] for each such RFC.
 pub(crate) fn changes(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
-    let (base, head) = load_both(base, head)?;
-    Ok(requirement_changes(&base, &head))
+    compared(base, head).map(|(changes, _)| changes)
 }
 
 /// Each contract RFC that both trees hold whose `contract_version` differs from `base` to `head`,
-/// in the order of its number; or, where a tree fails a format rule, each finding that fails, as
+/// in the order of its number; or, where the comparison fails, each finding that fails, as
 /// [`changes`] returns them.
 pub(crate) fn contract_versions(
     base: &Tree,
     head: &Tree,
 ) -> Result<Vec<VersionChange>, Vec<Finding>> {
-    let (base, head) = load_both(base, head)?;
-    Ok(version_changes(&base, &head))
+    compared(base, head).map(|(_, versions)| versions)
 }
 
 /// The changes [`changes`] returns and the version changes [`contract_versions`] returns, from
-/// one load of each tree; or, where a tree fails a format rule, each finding that fails, as
+/// one load of each tree; or, where the comparison fails, each finding that fails, as
 /// [`changes`] returns them.
 pub(crate) fn changes_and_versions(
     base: &Tree,
     head: &Tree,
 ) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
+    compared(base, head)
+}
+
+/// The changes and the version changes from `base` to `head`, where both trees pass the format
+/// rules, the head keeps each entry of the base's registry and each contract RFC whose
+/// requirements change raises its `contract_version`; otherwise each finding that fails, as
+/// [`changes`] returns them.
+fn compared(base: &Tree, head: &Tree) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
     let (base, head) = load_both(base, head)?;
-    Ok((
-        requirement_changes(&base, &head),
-        version_changes(&base, &head),
-    ))
+    let changes = requirement_changes(&base, &head);
+    let unraised = unraised(&base, &head, &changes);
+    if unraised.is_empty() {
+        Ok((changes, version_changes(&base, &head)))
+    } else {
+        Err(unraised)
+    }
 }
 
 /// Both trees loaded, where both pass the format rules and the head keeps each entry of the
@@ -218,15 +237,91 @@ fn version_changes(base: &Loaded, head: &Loaded) -> Vec<VersionChange> {
 
 /// The `contract_version` of each contract RFC of the tree, by its number.
 fn versions(tree: &Loaded) -> BTreeMap<u32, i64> {
-    let mut versions = BTreeMap::new();
+    let contracts = contracts(tree).into_iter();
+    contracts
+        .map(|(number, (_, version))| (number, version.value))
+        .collect()
+}
+
+/// Each contract RFC of the tree whose rfc.toml holds `contract_version`, with that version and
+/// its line, by its number.
+fn contracts(tree: &Loaded) -> BTreeMap<u32, (&Rfc, &Located<i64>)> {
+    let mut contracts = BTreeMap::new();
     for rfc in &tree.set.rfcs {
         let meta = rfc.meta.as_ref();
         let version = meta.and_then(|meta| meta.contract_version.as_ref());
         if let Some(version) = version.filter(|_| tree.config.is_contract(rfc.number)) {
-            versions.insert(rfc.number, version.value);
+            contracts.insert(rfc.number, (rfc, version));
         }
     }
-    versions
+    contracts
+}
+
+/// A finding of [`VERSION_RAISED`] for each contract RFC that both trees hold, that holds a
+/// requirement of `changes`, and whose `contract_version` in the head isn't greater than in the
+/// base, in the order of its number. The RFC of an added or changed requirement is the RFC that
+/// holds it in the head, and of a retired one the RFC that held it in the base: an identifier
+/// names the RFC it was first written in, which may not be the RFC that holds it.
+fn unraised(base: &Loaded, head: &Loaded, changes: &[Change]) -> Vec<Finding> {
+    let (before, after) = (holders(&base.set), holders(&head.set));
+    let mut by_rfc: BTreeMap<u32, Vec<&Change>> = BTreeMap::new();
+    for change in changes {
+        let held_by = match change.kind {
+            ChangeKind::Retired => &before,
+            ChangeKind::Added | ChangeKind::Changed => &after,
+        };
+        if let Some(&number) = held_by.get(change.requirement.as_str()) {
+            by_rfc.entry(number).or_default().push(change);
+        }
+    }
+    let (was, now) = (contracts(base), contracts(head));
+    let mut findings = Vec::new();
+    for (number, held) in by_rfc {
+        let (Some((_, from)), Some((rfc, to))) = (was.get(&number), now.get(&number)) else {
+            continue;
+        };
+        if to.value > from.value {
+            continue;
+        }
+        let listed: Vec<String> = held
+            .iter()
+            .map(|change| format!("{} {}", change.kind.as_str(), change.requirement))
+            .collect();
+        let next = from.value.saturating_add(1);
+        let message = format!(
+            "the change adds, changes or retires a requirement of contract RFC {number} ({}), \
+             and its contract_version is {} in the head and {} in the base: raise it to {next}",
+            listed.join(", "),
+            to.value,
+            from.value,
+        );
+        let file = format!("head:{}", rfc.meta_file);
+        let first = held.first().map(|change| change.requirement.as_str());
+        findings.push(Finding::error(
+            VERSION_RAISED,
+            &file,
+            to.line,
+            first,
+            message,
+        ));
+    }
+    findings
+}
+
+/// The number of the RFC whose section files hold each requirement of the set, by its
+/// identifier.
+fn holders(set: &Set) -> BTreeMap<&str, u32> {
+    let mut holders = BTreeMap::new();
+    for rfc in &set.rfcs {
+        let blocks = rfc
+            .sections
+            .iter()
+            .flat_map(|section| &section.requirements);
+        for id in blocks.filter_map(|block| block.text("id")) {
+            holders.insert(id, rfc.number);
+        }
+    }
+    holders
 }
 
 /// The tree's configuration and RFCs, where it passes the format rules; otherwise adds to
@@ -358,10 +453,10 @@ mod tests {
 
     use super::{
         changes, changes_and_versions, contract_versions, same, same_items, same_requirement,
-        VersionChange,
+        Binding, Change, ChangeKind, VersionChange, VERSION_RAISED,
     };
     use crate::model::{Block, Field};
-    use crate::{ByteVec, Tree};
+    use crate::{ByteVec, Finding, Tree};
 
     /// The configuration of a set of one system and one contract group.
     const SPEC: &str = r#"prefix = "EX"
@@ -417,12 +512,20 @@ rationale = "A caller waits for each answer."
 
     /// A tree of RFC 100 at the contract version, with the files the render generates from it.
     fn contract_tree(version: u32) -> Tree {
-        let meta = format!("{META}contract_version = {version}\n");
+        contract_tree_with(version, SECTION, "")
+    }
+
+    /// A tree of RFC 100 at the contract version, whose section file is `section` and whose
+    /// rfc.toml retires the identifiers of `retired`, a TOML list's items, with the files the
+    /// render generates from them.
+    fn contract_tree_with(version: u32, section: &str, retired: &str) -> Tree {
+        let meta = META.replace("retired = []", &format!("retired = [{retired}]"));
+        let meta = format!("{meta}contract_version = {version}\n");
         let files = [
             ("spec.toml", SPEC.to_string()),
             ("rfcs/index.toml", INDEX.to_string()),
             ("rfcs/0100-answers/rfc.toml", meta),
-            ("rfcs/0100-answers/01-answer.toml", SECTION.to_string()),
+            ("rfcs/0100-answers/01-answer.toml", section.to_string()),
         ];
         let mut tree = Tree::default();
         for (path, text) in files {
@@ -474,6 +577,121 @@ rationale = "A caller waits for each answer."
             let expected = changes(base, head).expect_err("a tree fails");
             assert_eq!(found, expected);
         }
+    }
+
+    /// A second requirement of RFC 100, which a change adds.
+    const ADDED: &str = r#"
+[[requirement]]
+id = "EX-0100-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST answer the requests in the order they came."
+binds_to = "system"
+rationale = "A caller reads the answers in the order it asked."
+"#;
+
+    /// RFC 100's section, with its requirement's statement changed.
+    fn changed_section() -> String {
+        let section = SECTION.replace("each request.", "each request it reads.");
+        assert_ne!(section, SECTION, "the statement changes");
+        section
+    }
+
+    /// The finding of a change of RFC 100's requirements, `listed`, whose first is `first`, where
+    /// its `contract_version` is `base` in the base and `head` in the head.
+    fn unraised_finding(listed: &str, first: &str, base: i64, head: i64) -> Finding {
+        let message = format!(
+            "the change adds, changes or retires a requirement of contract RFC 100 ({listed}), \
+             and its contract_version is {head} in the head and {base} in the base: raise it to {}",
+            base + 1,
+        );
+        let file = "head:rfcs/0100-answers/rfc.toml";
+        // The rfc.toml of `contract_tree_with` holds `contract_version` at its line 6.
+        Finding::error(VERSION_RAISED, file, 6, Some(first), message)
+    }
+
+    #[test]
+    fn a_changed_requirement_of_a_contract_rfc_without_a_raise_fails() {
+        let (base, head) = (
+            contract_tree(1),
+            contract_tree_with(1, &changed_section(), ""),
+        );
+        let expected = vec![unraised_finding("changed EX-0100-001", "EX-0100-001", 1, 1)];
+        assert_eq!(changes(&base, &head), Err(expected.clone()));
+        assert_eq!(contract_versions(&base, &head), Err(expected.clone()));
+        assert_eq!(changes_and_versions(&base, &head), Err(expected));
+    }
+
+    #[test]
+    fn a_changed_requirement_of_a_contract_rfc_with_a_raise_passes() {
+        let (base, head) = (
+            contract_tree(1),
+            contract_tree_with(2, &changed_section(), ""),
+        );
+        let found = changes_and_versions(&base, &head);
+        let found = found.map_err(|findings| format!("{findings:?}"));
+        let change = Change {
+            kind: ChangeKind::Changed,
+            requirement: "EX-0100-001".to_string(),
+            binds_to: Binding::System,
+        };
+        let version = VersionChange {
+            rfc: 100,
+            base: 1,
+            head: 2,
+        };
+        assert_eq!(found, Ok((vec![change], vec![version])));
+    }
+
+    #[test]
+    fn an_added_requirement_of_a_contract_rfc_without_a_raise_fails() {
+        let head = contract_tree_with(1, &format!("{SECTION}{ADDED}"), "");
+        let expected = unraised_finding("added EX-0100-002", "EX-0100-002", 1, 1);
+        assert_eq!(changes(&contract_tree(1), &head), Err(vec![expected]));
+    }
+
+    #[test]
+    fn a_retired_requirement_counts_for_the_rfc_that_held_it_in_the_base() {
+        // The head holds EX-0100-002 in place of EX-0100-001, which it retires, so only the base
+        // holds EX-0100-001.
+        let section = SECTION.replace("EX-0100-001", "EX-0100-002");
+        let head = contract_tree_with(1, &section, "\"EX-0100-001\"");
+        let listed = "retired EX-0100-001, added EX-0100-002";
+        let expected = unraised_finding(listed, "EX-0100-001", 1, 1);
+        assert_eq!(changes(&contract_tree(1), &head), Err(vec![expected]));
+    }
+
+    #[test]
+    fn a_lowered_contract_version_fails_a_change_of_its_requirements() {
+        let (base, head) = (
+            contract_tree(2),
+            contract_tree_with(1, &changed_section(), ""),
+        );
+        let expected = unraised_finding("changed EX-0100-001", "EX-0100-001", 2, 1);
+        assert_eq!(changes(&base, &head), Err(vec![expected]));
+    }
+
+    #[test]
+    fn a_change_of_the_rationale_alone_doesnt_need_a_raise() {
+        let section = SECTION.replace("A caller waits for each answer.", "Each caller waits.");
+        assert_ne!(section, SECTION, "the rationale changes");
+        let found = changes(&contract_tree(1), &contract_tree_with(1, &section, ""));
+        let found = found.map_err(|findings| format!("{findings:?}"));
+        assert_eq!(found, Ok(Vec::new()));
+    }
+
+    #[test]
+    fn a_contract_rfc_that_only_the_head_holds_isnt_compared() {
+        let mut base = contract_tree(1);
+        base.files.retain(|path, _| !path.contains("0100-answers"));
+        let found = changes(&base, &contract_tree(1));
+        let found = found.map_err(|findings| format!("{findings:?}"));
+        let change = Change {
+            kind: ChangeKind::Added,
+            requirement: "EX-0100-001".to_string(),
+            binds_to: Binding::System,
+        };
+        assert_eq!(found, Ok(vec![change]));
     }
 
     /// A block of the required fields alone, so that each compared field reads at its default.

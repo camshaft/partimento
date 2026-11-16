@@ -26,7 +26,7 @@ mod source;
 #[cfg(not(any(feature = "batsat", feature = "varisat")))]
 compile_error!("enable a solver backend: the `batsat` feature or the `varisat` feature");
 
-pub use diff::{Binding, Change, ChangeKind, VersionChange};
+pub use diff::{Binding, Change, ChangeKind, VersionChange, VERSION_RAISED};
 
 /// The files of a specification tree, by their paths relative to its root, with `/` between the
 /// parts of a path.
@@ -234,22 +234,25 @@ pub fn check_cached<B: solver::Backend + Default, C: Cache>(
 /// where both pass and the head removes an entry of the base's registry or changes its
 /// identifies, format or body_length, a finding of each such entry, with its file's path after
 /// `head:`; or, where both pass and the head's registry isn't UTF-8 or doesn't parse, the
-/// findings of its read, with its file's path after `head:`.
+/// findings of its read, with its file's path after `head:`; or, where the change adds, changes
+/// or retires a requirement of a contract RFC that both trees hold and the RFC's
+/// `contract_version` in the head isn't greater than in the base, a finding of
+/// [`VERSION_RAISED`] for each such RFC, at the line of its `contract_version` in the head's
+/// rfc.toml, with that file's path after `head:`.
 pub fn diff(base: &Tree, head: &Tree) -> Result<Vec<Change>, Vec<Finding>> {
     diff::changes(base, head)
 }
 
 /// Each contract RFC that both trees hold whose `contract_version` differs from `base` to `head`,
-/// in the order of its number; or, where either tree fails a format rule, each finding that
-/// fails, as [`diff`] returns them.
+/// in the order of its number; or, where the diff fails, each finding that fails, as [`diff`]
+/// returns them.
 pub fn contract_versions(base: &Tree, head: &Tree) -> Result<Vec<VersionChange>, Vec<Finding>> {
     diff::contract_versions(base, head)
 }
 
 /// Each requirement added, changed and retired, as [`diff`] returns them, and each contract RFC
 /// whose `contract_version` differs, as [`contract_versions`] returns them, from one read of each
-/// tree; or, where either tree fails a format rule, each finding that fails, as [`diff`] returns
-/// them.
+/// tree; or, where the diff fails, each finding that fails, as [`diff`] returns them.
 pub fn diff_with_versions(
     base: &Tree,
     head: &Tree,
