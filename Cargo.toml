@@ -36,3 +36,9 @@ required-features = ["cli"]
 name = "timing"
 path = "tests/timing.rs"
 harness = false
+
+# Prints the time of each solve of a wide `all_of` composition, in each CI run's log.
+[[test]]
+name = "all_of_timing"
+path = "tests/all_of_timing.rs"
+harness = false
