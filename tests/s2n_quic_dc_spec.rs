@@ -1,5 +1,5 @@
 //! Not for merge: a check run of the s2n-quic-dc specification as it stands at
-//! camshaft/s2n-quic commit 268baef5fa4514a7f4fb413fc292232d16d148df.
+//! camshaft/s2n-quic commit ebea53d3de7b070aed83a917f713c183edd898ee.
 //!
 //! `tests/s2n-quic-dc-spec/` holds the specification's source files at that commit, and
 //! `tests/s2n-quic-dc-spec-blobs.txt` the git blob id of each of its 124 committed files.
@@ -102,7 +102,7 @@ fn files_under(dir: &Path) -> Vec<(String, Vec<u8>)> {
 }
 
 #[test]
-fn the_s2n_quic_dc_spec_at_268baef5() {
+fn the_s2n_quic_dc_spec_at_ebea53d3() {
     let committed: BTreeMap<String, String> = BLOBS
         .lines()
         .filter(|line| !line.trim().is_empty())
