@@ -370,8 +370,9 @@ fn passes(tree: &Tree) -> bool {
 }
 ```
 
-`render` returns a tree of the generated files, `diff` the changes between two trees, and
-`check_cached` runs a check with a `Cache` of its own.
+`render` returns a tree of the generated files, `plan` the files a render of a tree writes and
+removes, `diff` the changes between two trees, and `check_cached` runs a check with a `Cache` of
+its own.
 
 ## Features
 

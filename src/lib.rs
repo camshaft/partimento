@@ -262,11 +262,63 @@ pub fn diff_with_versions(
 /// A set that breaks a format rule doesn't render: the error holds the findings of the format
 /// rules, in the order of a report.
 pub fn render(tree: &Tree) -> Result<Tree, Vec<Finding>> {
+    rendered(tree).map(|(_, generated)| generated)
+}
+
+/// What a render changes in the tree, which the `render` command carries out: each generated file
+/// that the tree doesn't hold byte for byte, and each file of the tree under the generated paths
+/// that the render doesn't generate, the files the drift rule reports as stale. A set that breaks
+/// a format rule doesn't render: the error holds the findings of the format rules, as [`render`]
+/// returns them.
+pub fn plan(tree: &Tree) -> Result<Plan, Vec<Finding>> {
+    let (paths, generated) = rendered(tree)?;
+    let removes = render::stale(render::Paths::of(&paths), tree, &generated)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let writes = generated
+        .files
+        .into_iter()
+        .filter(|(path, bytes)| tree.files.get(path) != Some(bytes))
+        .collect();
+    Ok(Plan {
+        writes: Tree { files: writes },
+        removes,
+    })
+}
+
+/// The files a render writes and removes in a tree, as [`plan`] returns them. Only [`plan`] builds
+/// one, and its fields are private, so a later field doesn't break a caller.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Plan {
+    writes: Tree,
+    removes: Vec<String>,
+}
+
+impl Plan {
+    /// Each generated file that the tree doesn't hold byte for byte, a missing one among them, by
+    /// its path, with the bytes the render writes.
+    pub fn writes(&self) -> &Tree {
+        &self.writes
+    }
+
+    /// Each file of the tree under the generated paths that the render doesn't generate, in the
+    /// order of its path.
+    pub fn removes(&self) -> &[String] {
+        &self.removes
+    }
+}
+
+/// The paths spec.toml sets and the generated files of a tree whose format rules pass, or the
+/// findings of the format rules, in the order of a report.
+fn rendered(tree: &Tree) -> Result<(config::Paths, Tree), Vec<Finding>> {
     let mut findings = Vec::new();
     match load(tree, &NoCache, &mut findings) {
         Some((config, set)) if !fails(&findings) => {
             let paths = render::Paths::of(&config.paths);
-            Ok(render::generate(paths, &render::sections(&set)).tree)
+            let generated = render::generate(paths, &render::sections(&set)).tree;
+            Ok((config.paths, generated))
         }
         _ => {
             sort(&mut findings);
