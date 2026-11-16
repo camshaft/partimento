@@ -1,0 +1,40 @@
+[section]
+anchor = "greeting"
+title = "Greeting"
+problem = "A person who starts the program doesn't know that it runs."
+motivation = "A greeting tells the person that the program runs."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the greeting to the output stream."
+logic = ["EX-0001-001 -> EX-0001-004"]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the farewell to the output stream."
+relations = [{ kind = "depends_on", target = "EX-0001-004" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-003"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print the time to the output stream."
+relations = [{ kind = "implies", target = "EX-0001-004" }]
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-004"
+level = "MUST"
+polarity = "forbidden"
+statement = "The program MUST NOT print the greeting to the error stream."
