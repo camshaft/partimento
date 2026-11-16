@@ -57,7 +57,6 @@ pub struct Index {
 /// };
 /// ```
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct IndexEntry {
     pub number: u32,
     /// The line of the row's `number`.
@@ -96,7 +95,6 @@ pub enum State {
 /// };
 /// ```
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct Rfc {
     /// The directory's path in the tree.
     pub dir: String,
@@ -153,7 +151,6 @@ pub struct Located<T> {
 /// };
 /// ```
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct Meta {
     pub number: u32,
     /// The line of its `number`.
@@ -189,7 +186,6 @@ pub struct Meta {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[non_exhaustive]
 pub struct Source {
     pub design: Option<String>,
     pub version: Option<u32>,
@@ -212,7 +208,6 @@ pub struct Source {
 /// };
 /// ```
 #[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
 pub struct Section {
     /// The file's path in the tree.
     pub file: String,
@@ -250,7 +245,6 @@ pub struct Block {
 /// };
 /// ```
 #[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
 pub struct Field {
     pub key: String,
     pub line: u32,
