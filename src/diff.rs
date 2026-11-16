@@ -661,6 +661,66 @@ rationale = "A caller reads the answers in the order it asked."
         assert_eq!(changes(&contract_tree(1), &head), Err(vec![expected]));
     }
 
+    /// System RFC 1's row of the index.
+    const SYSTEM_ROW: &str = r#"[[rfc]]
+number = 1
+title = "Requests"
+area = "core"
+"#;
+
+    /// System RFC 1's metadata, with an empty `retired` list.
+    const SYSTEM_META: &str = r#"number = 1
+title = "Requests"
+area = "core"
+abstract = "How the program reads requests."
+retired = []
+"#;
+
+    /// A requirement of RFC 100's section whose identifier names RFC 1, the RFC it was first
+    /// written in: the requirement keeps its identifier where it moves to another RFC.
+    const MOVED: &str = r#"
+[[requirement]]
+id = "EX-0001-005"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST read each request whole."
+binds_to = "system"
+rationale = "A part of a request doesn't say what it asks."
+"#;
+
+    /// `tree` with system RFC 1 too, which doesn't hold a section, and whose rfc.toml retires the
+    /// identifiers of `retired`, a TOML list's items.
+    fn with_system_rfc(mut tree: Tree, retired: &str) -> Tree {
+        let meta = SYSTEM_META.replace("retired = []", &format!("retired = [{retired}]"));
+        let index = format!("{SYSTEM_ROW}\n{INDEX}");
+        tree.files.insert("rfcs/index.toml".to_string(), ByteVec::from(index));
+        tree.files.insert("rfcs/0001-requests/rfc.toml".to_string(), ByteVec::from(meta));
+        tree
+    }
+
+    #[test]
+    fn a_change_counts_for_the_rfc_that_holds_it_not_the_rfc_its_identifier_names() {
+        // Both trees' RFC 100 holds EX-0001-005, and the head changes its statement.
+        let section = format!("{SECTION}{MOVED}");
+        let changed = section.replace("request whole.", "request whole before it answers.");
+        assert_ne!(changed, section, "the statement changes");
+        let base = with_system_rfc(contract_tree_with(1, &section, ""), "");
+        let head = with_system_rfc(contract_tree_with(1, &changed, ""), "");
+        let expected = unraised_finding("changed EX-0001-005", "EX-0001-005", 1, 1);
+        assert_eq!(changes(&base, &head), Err(vec![expected]));
+    }
+
+    #[test]
+    fn a_retirement_counts_for_the_rfc_that_held_it_not_the_rfc_its_identifier_names() {
+        // The base's RFC 100 holds EX-0001-005, and in the head RFC 1, the RFC its identifier
+        // names, retires it.
+        let moved = format!("{SECTION}{MOVED}");
+        let base = with_system_rfc(contract_tree_with(1, &moved, ""), "");
+        let head = with_system_rfc(contract_tree(1), "\"EX-0001-005\"");
+        let expected = unraised_finding("retired EX-0001-005", "EX-0001-005", 1, 1);
+        assert_eq!(changes(&base, &head), Err(vec![expected]));
+    }
+
     #[test]
     fn a_lowered_contract_version_fails_a_change_of_its_requirements() {
         let (base, head) = (
