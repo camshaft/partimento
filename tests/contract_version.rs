@@ -80,7 +80,10 @@ fn a_change_with_the_version_raised_passes_the_diff() {
         .iter()
         .map(|change| (change.kind, change.requirement.as_str(), change.binds_to))
         .collect();
-    assert_eq!(found, [(ChangeKind::Changed, "EX-0100-001", Binding::System)]);
+    assert_eq!(
+        found,
+        [(ChangeKind::Changed, "EX-0100-001", Binding::System)]
+    );
     let expected = VersionChange {
         rfc: 100,
         base: 1,

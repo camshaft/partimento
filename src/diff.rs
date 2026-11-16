@@ -172,10 +172,7 @@ pub(crate) fn changes_and_versions(
 /// rules, the head keeps each entry of the base's registry and each contract RFC whose
 /// requirements change raises its `contract_version`; otherwise each finding that fails, as
 /// [`changes`] returns them.
-fn compared(
-    base: &Tree,
-    head: &Tree,
-) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
+fn compared(base: &Tree, head: &Tree) -> Result<(Vec<Change>, Vec<VersionChange>), Vec<Finding>> {
     let (base, head) = load_both(base, head)?;
     let changes = requirement_changes(&base, &head);
     let unraised = unraised(&base, &head, &changes);
@@ -300,7 +297,13 @@ fn unraised(base: &Loaded, head: &Loaded, changes: &[Change]) -> Vec<Finding> {
         );
         let file = format!("head:{}", rfc.meta_file);
         let first = held.first().map(|change| change.requirement.as_str());
-        findings.push(Finding::error(VERSION_RAISED, &file, to.line, first, message));
+        findings.push(Finding::error(
+            VERSION_RAISED,
+            &file,
+            to.line,
+            first,
+            message,
+        ));
     }
     findings
 }
@@ -310,7 +313,10 @@ fn unraised(base: &Loaded, head: &Loaded, changes: &[Change]) -> Vec<Finding> {
 fn holders(set: &Set) -> BTreeMap<&str, u32> {
     let mut holders = BTreeMap::new();
     for rfc in &set.rfcs {
-        let blocks = rfc.sections.iter().flat_map(|section| &section.requirements);
+        let blocks = rfc
+            .sections
+            .iter()
+            .flat_map(|section| &section.requirements);
         for id in blocks.filter_map(|block| block.text("id")) {
             holders.insert(id, rfc.number);
         }
@@ -606,7 +612,10 @@ rationale = "A caller reads the answers in the order it asked."
 
     #[test]
     fn a_changed_requirement_of_a_contract_rfc_without_a_raise_fails() {
-        let (base, head) = (contract_tree(1), contract_tree_with(1, &changed_section(), ""));
+        let (base, head) = (
+            contract_tree(1),
+            contract_tree_with(1, &changed_section(), ""),
+        );
         let expected = vec![unraised_finding("changed EX-0100-001", "EX-0100-001", 1, 1)];
         assert_eq!(changes(&base, &head), Err(expected.clone()));
         assert_eq!(contract_versions(&base, &head), Err(expected.clone()));
@@ -615,7 +624,10 @@ rationale = "A caller reads the answers in the order it asked."
 
     #[test]
     fn a_changed_requirement_of_a_contract_rfc_with_a_raise_passes() {
-        let (base, head) = (contract_tree(1), contract_tree_with(2, &changed_section(), ""));
+        let (base, head) = (
+            contract_tree(1),
+            contract_tree_with(2, &changed_section(), ""),
+        );
         let found = changes_and_versions(&base, &head);
         let found = found.map_err(|findings| format!("{findings:?}"));
         let change = Change {
@@ -651,7 +663,10 @@ rationale = "A caller reads the answers in the order it asked."
 
     #[test]
     fn a_lowered_contract_version_fails_a_change_of_its_requirements() {
-        let (base, head) = (contract_tree(2), contract_tree_with(1, &changed_section(), ""));
+        let (base, head) = (
+            contract_tree(2),
+            contract_tree_with(1, &changed_section(), ""),
+        );
         let expected = unraised_finding("changed EX-0100-001", "EX-0100-001", 2, 1);
         assert_eq!(changes(&base, &head), Err(vec![expected]));
     }
