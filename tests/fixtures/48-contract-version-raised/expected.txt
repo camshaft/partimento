@@ -1,0 +1,1 @@
+error[contract-version-raised] head:rfcs/0100-answers/rfc.toml:6: EX-0100-001: the change adds, changes or retires a requirement of contract RFC 100 (changed EX-0100-001), and its contract_version is 1 in the head and 1 in the base: raise it to 2

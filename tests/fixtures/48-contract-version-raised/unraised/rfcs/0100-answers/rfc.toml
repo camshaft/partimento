@@ -1,0 +1,6 @@
+number = 100
+title = "Answers"
+area = "contracts"
+abstract = "How the program answers requests."
+retired = []
+contract_version = 1

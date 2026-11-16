@@ -346,6 +346,13 @@ at `<head>`, and each contract RFC whose `contract_version` differs between them
 format rule, it prints that tree's failing findings instead and exits with 1. It exits with 2
 where the arguments are wrong or a file can't be read.
 
+Where the change adds, changes or retires a requirement of a contract RFC that both trees hold,
+and the RFC's `contract_version` in the head isn't greater than in the base, `diff` prints a
+finding of the rule `contract-version-raised` for each such RFC instead, at the
+`contract_version` line of the head's `rfc.toml`, and exits with 1. The RFC of a change is the
+RFC whose files hold the requirement in the head, or in the base for a retired one, and a change
+of `label` or `rationale` alone doesn't need a raise.
+
 ## The library
 
 ```toml
