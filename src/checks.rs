@@ -1598,7 +1598,7 @@ last = 99
         CLAUSES.with(|count| count.set(0));
         let mut encoding = Encoding::new(Clauses(B::default()), &formula_set);
         let clauses = CLAUSES.with(std::cell::Cell::get);
-        assert!(clauses <= 9 * PARTS, "{clauses} clauses for {PARTS} parts");
+        assert!(clauses <= 10 * PARTS, "{clauses} clauses for {PARTS} parts");
         let selectors = encoding.selectors().to_vec();
         let middle = PARTS / 2;
         assert!(holds(&mut encoding, &selectors, &assume(&parts, &[middle])));

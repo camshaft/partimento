@@ -817,12 +817,12 @@ impl<B: Backend> Encoding<B> {
             }
             Formula::Or(_) => {
                 let x = self.backend.new_var();
-                let mut any_true = vec![!x];
+                let mut any_true = Vec::new();
                 for lit in lits {
                     self.backend.add_clause(&[x, !lit]);
                     any_true.push(lit);
                 }
-                self.backend.add_clause(&any_true);
+                self.add_chained_clause(!x, &any_true);
                 x
             }
             Formula::ExactlyOne(_) => self.exactly_one_of(lits),
@@ -846,6 +846,27 @@ impl<B: Backend> Encoding<B> {
                 x
             }
         })
+    }
+
+    /// Adds the clause `first | rest[0] | ... | rest[n - 1]` as a chain of clauses of at most
+    /// three literals each, `first | rest[0] | c1`, `!c1 | rest[1] | c2`, and on to
+    /// `!cm | rest[n - 2] | rest[n - 1]`, with a new variable `c` between each two. An assignment
+    /// satisfies the chain, with each `c` set to match, exactly where it satisfies the clause, so
+    /// the chain says what the clause says. A solver that sets the literals false one at a time,
+    /// as a solve with an assumption for each of them does, looks over a clause's literals for a
+    /// new one to watch each time a watched literal turns false, so one clause of n literals
+    /// costs it about n squared steps in all, and each clause of the chain at most three.
+    fn add_chained_clause(&mut self, first: Lit, mut rest: &[Lit]) {
+        let mut head = first;
+        while rest.len() > 2 {
+            let next = self.backend.new_var();
+            self.backend.add_clause(&[head, rest[0], next]);
+            head = !next;
+            rest = &rest[1..];
+        }
+        let mut last = vec![head];
+        last.extend_from_slice(rest);
+        self.backend.add_clause(&last);
     }
 
     /// A literal equivalent to exactly one of `lits` being true, with clauses linear in their
@@ -1264,10 +1285,12 @@ mod tests {
         assert!(sat(&mut encoding, &[("A", false)]));
     }
 
-    /// A backend that counts the clauses an encoding adds to the backend it wraps.
+    /// A backend that counts the clauses an encoding adds to the backend it wraps, and the
+    /// literals of the widest of them.
     struct Counted<B> {
         backend: B,
         clauses: Rc<Cell<usize>>,
+        widest: Rc<Cell<usize>>,
     }
 
     impl<B: Backend> Backend for Counted<B> {
@@ -1277,6 +1300,7 @@ mod tests {
 
         fn add_clause(&mut self, clause: &[Lit]) {
             self.clauses.set(self.clauses.get() + 1);
+            self.widest.set(self.widest.get().max(clause.len()));
             self.backend.add_clause(clause);
         }
 
@@ -1287,13 +1311,22 @@ mod tests {
 
     /// The encoding of the formula `text`, and the count of clauses it added.
     fn counted<B: Backend + Default>(text: &str) -> (Encoding<Counted<B>>, usize) {
+        let (encoding, clauses, _) = tallied::<B>(text);
+        (encoding, clauses)
+    }
+
+    /// The encoding of the formula `text`, the count of clauses it added, and the literals of
+    /// the widest of them.
+    fn tallied<B: Backend + Default>(text: &str) -> (Encoding<Counted<B>>, usize, usize) {
         let clauses = Rc::new(Cell::new(0));
+        let widest = Rc::new(Cell::new(0));
         let backend = Counted {
             backend: B::default(),
             clauses: Rc::clone(&clauses),
+            widest: Rc::clone(&widest),
         };
         let encoding = Encoding::new(backend, &set(&[text]));
-        (encoding, clauses.get())
+        (encoding, clauses.get(), widest.get())
     }
 
     /// Each of `names`, true where `true_at` holds its index and false elsewhere.
@@ -1328,6 +1361,34 @@ mod tests {
         assert!(!sat(&mut encoding, &assume(&names, &[0, PARTS - 1])));
         let neighbors = assume(&names, &[PARTS / 2, PARTS / 2 + 1]);
         assert!(!sat(&mut encoding, &neighbors));
+    }
+
+    /// An `at_least_one` of `PARTS` atoms encodes in clauses linear in its parts and of at most
+    /// three literals each, so a solve that assumes each part false looks at each clause a
+    /// bounded number of times, and holds where at least one part is true. An `at_least_one` of
+    /// one to five atoms agrees with its truth table.
+    fn wide_at_least_one<B: Backend + Default>() {
+        for count in 1..=5usize {
+            let names: Vec<String> = (0..count).map(|i| format!("P{i}")).collect();
+            let text = format!("at_least_one({})", names.join(", "));
+            let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+            for row in 0..1usize << count {
+                let true_at: Vec<usize> = (0..count).filter(|&i| (row >> i) & 1 == 1).collect();
+                let found = sat(&mut encoding, &assume(&names, &true_at));
+                assert_eq!(found, !true_at.is_empty(), "{text} with {true_at:?} true");
+            }
+        }
+        let names: Vec<String> = (0..PARTS).map(|i| format!("P{i}")).collect();
+        let text = format!("at_least_one({})", names.join(", "));
+        let (mut encoding, clauses, widest) = tallied::<B>(&text);
+        assert!(clauses <= 3 * PARTS, "{clauses} clauses for {PARTS} parts");
+        assert!(widest <= 3, "a clause of {widest} literals");
+        assert!(!sat(&mut encoding, &assume(&names, &[])));
+        for part in [0, PARTS / 2, PARTS - 1] {
+            let found = sat(&mut encoding, &assume(&names, &[part]));
+            assert!(found, "P{part} alone");
+        }
+        assert!(sat(&mut encoding, &assume(&names, &[0, PARTS - 1])));
     }
 
     /// An `exactly_one(B, ...)` nested `DEPTH` deep reads, prints, clones, drops and encodes
@@ -1368,6 +1429,7 @@ mod tests {
         deep_calls,
         deep_implications,
         wide_exactly_one,
+        wide_at_least_one,
         nested_exactly_one,
     );
 }
