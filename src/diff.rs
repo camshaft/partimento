@@ -527,11 +527,7 @@ binds_to = "system"
         }
         let fields = table
             .into_iter()
-            .map(|(key, value)| Field {
-                key,
-                line: 1,
-                value,
-            })
+            .map(|(key, value)| Field::new(key, 1, value))
             .collect();
         Block { line: 1, fields }
     }
