@@ -383,6 +383,45 @@ fn a_generated_file_whose_section_is_gone_is_drift() {
 }
 
 #[test]
+fn a_plan_removes_a_stale_requirement_file_and_writes_each_generated_file_that_differs() {
+    let mut full = tree(named("01-valid-set"));
+    full.files.remove("rfcs/0001-greetings/02-reply.toml");
+    let text = "rendered/0001-greetings/02-reply.md";
+    let requirement = ".duvet/requirements/0001-greetings/02-reply/EX-0001-003.toml";
+    let generated = partimento::render(&full).expect("the set renders");
+    let mut files = generated.files.iter();
+    let (missing, missing_bytes) = files.next().expect("the set generates a file");
+    let (edited, edited_bytes) = files.next().expect("the set generates a second file");
+    full.files.remove(missing);
+    full.files
+        .insert(edited.clone(), ByteVec::from("hand edit\n".to_string()));
+    let plan = partimento::plan(&full).expect("the set renders");
+    assert_eq!(plan.removes(), [requirement, text]);
+    let mut writes = Tree::default();
+    writes.files.insert(missing.clone(), missing_bytes.clone());
+    writes.files.insert(edited.clone(), edited_bytes.clone());
+    assert_eq!(plan.writes(), &writes);
+}
+
+#[test]
+fn a_plan_of_a_tree_that_matches_its_render_is_empty() {
+    let plan = partimento::plan(&tree(named("01-valid-set"))).expect("the set renders");
+    assert!(plan.writes().files.is_empty(), "{plan:?}");
+    assert!(plan.removes().is_empty(), "{plan:?}");
+}
+
+#[test]
+fn a_plan_of_a_set_that_breaks_a_format_rule_returns_the_findings_of_its_render() {
+    let failing = tree(named("02-duplicate-identifier"));
+    let findings = partimento::render(&failing).expect_err("the set doesn't render");
+    assert!(!findings.is_empty());
+    assert_eq!(
+        partimento::plan(&failing).expect_err("the set doesn't render"),
+        findings
+    );
+}
+
+#[test]
 fn a_set_whose_format_rules_fail_doesnt_render() {
     let mut names = Vec::new();
     for fixture in FIXTURES {
@@ -836,6 +875,38 @@ mod binary {
         let output = run(&["check", "--root", root]);
         assert_eq!(String::from_utf8_lossy(&output.stdout), "");
         assert_eq!(output.status.code(), Some(0));
+    }
+
+    #[test]
+    fn render_writes_and_removes_what_the_plan_answers() {
+        let mut written = tree(named("01-valid-set"));
+        written.files.remove("rfcs/0001-greetings/02-reply.toml");
+        let generated = partimento::render(&written).expect("the set renders");
+        let mut files = generated.files.keys();
+        let missing = files.next().expect("the set generates a file").clone();
+        let edited = files
+            .next()
+            .expect("the set generates a second file")
+            .clone();
+        written.files.remove(&missing);
+        written
+            .files
+            .insert(edited, ByteVec::from("hand edit\n".to_string()));
+        let plan = partimento::plan(&written).expect("the set renders");
+        assert_eq!(plan.writes().files.len(), 2, "{plan:?}");
+        assert_eq!(plan.removes().len(), 2, "{plan:?}");
+        let dir = scratch("render-carries-out-the-plan");
+        write_tree(&dir, &written);
+        let root = dir.to_str().expect("the path is UTF-8");
+        let output = run(&["render", "--root", root]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(0), "{stderr}");
+        let mut expected = written;
+        for path in plan.removes() {
+            expected.files.remove(path);
+        }
+        expected.files.extend(plan.writes().files.clone());
+        assert_eq!(files_under(&dir), expected);
     }
 
     /// Runs `check` on `dir`, and asserts that it exits with 2, prints nothing on stdout, and

@@ -32,7 +32,7 @@ use std::{fs, io};
 
 use partimento::logic::FormulaSet;
 use partimento::{
-    config, json, ByteVec, Cache, Change, Finding, Key, Options, Report, Tree, VersionChange,
+    config, json, ByteVec, Cache, Change, Finding, Key, Options, Plan, Report, Tree, VersionChange,
 };
 
 const USAGE: &str = concat!(
@@ -193,11 +193,11 @@ fn parse_format(value: Option<String>) -> Result<Format, String> {
     }
 }
 
-/// Renders the tree, and writes its generated files under `root`, or prints the findings that
+/// Plans the tree's render, and carries out its plan under `root`, or prints the findings that
 /// stop the render; the exit code, or why a file can't be written.
 fn render(root: &Path, tree: &Tree, format: Format) -> Result<ExitCode, String> {
-    let generated = match partimento::render(tree) {
-        Ok(generated) => generated,
+    let plan = match partimento::plan(tree) {
+        Ok(plan) => plan,
         Err(findings) => {
             print!("{}", findings_output(&findings, format));
             return Ok(ExitCode::from(1));
@@ -205,30 +205,21 @@ fn render(root: &Path, tree: &Tree, format: Format) -> Result<ExitCode, String> 
     };
     // A tree that renders holds a configuration that loads.
     if let Some(config) = config::load(tree, &mut Vec::new()) {
-        write(root, tree, &generated, &config.paths)?;
+        write(root, &plan, &config.paths)?;
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// Removes each file of the tree under the generated directories of `paths` that the render
-/// doesn't generate, the files the drift rule reports as stale, with each directory above it that
-/// the removal leaves empty, and writes each generated file that the tree doesn't hold byte for
-/// byte.
-fn write(root: &Path, tree: &Tree, generated: &Tree, paths: &config::Paths) -> Result<(), String> {
-    for path in tree.files.keys() {
-        let stale = config::is_generated(&paths.rendered, &paths.requirements, path)
-            && !generated.files.contains_key(path);
-        if !stale {
-            continue;
-        }
+/// Carries out the plan: removes each file of its `removes`, the files the drift rule reports as
+/// stale, with each directory above it that the removal leaves empty, and writes each file of its
+/// `writes`, each generated file that the tree doesn't hold byte for byte.
+fn write(root: &Path, plan: &Plan, paths: &config::Paths) -> Result<(), String> {
+    for path in plan.removes() {
         let file = root.join(path);
         fs::remove_file(&file).map_err(|error| io_error(&file, &error))?;
         remove_empty(root, path, paths)?;
     }
-    for (path, bytes) in &generated.files {
-        if tree.files.get(path) == Some(bytes) {
-            continue;
-        }
+    for (path, bytes) in &plan.writes().files {
         let file = root.join(path);
         if let Some(parent) = file.parent() {
             fs::create_dir_all(parent).map_err(|error| io_error(parent, &error))?;
