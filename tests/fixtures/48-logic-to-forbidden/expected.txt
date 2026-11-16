@@ -1,0 +1,2 @@
+error[polarity-conflict] rfcs/0001-greetings/01-greeting.toml:19: EX-0001-002: the requirement is required at MUST, and its relations lead to `EX-0001-004`, which is forbidden at MUST
+error[polarity-conflict] rfcs/0001-greetings/01-greeting.toml:28: EX-0001-003: the requirement is required at MUST, and its relations lead to `EX-0001-004`, which is forbidden at MUST
