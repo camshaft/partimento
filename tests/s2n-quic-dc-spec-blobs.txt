@@ -30,7 +30,7 @@ dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-010.toml
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-011.toml 1fde90a8586037d73cbfbc37ef9e04097f38fffe
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-012.toml 33147f312021de24267c531bc56295b4eda0a566
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-013.toml 3a53609ce79e47b43c49a805e06b0cc17850e83f
-dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-014.toml 39534231b7c7a0e2303f8847af3e80e29cda7115
+dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-014.toml 3c9ef5f262d87d29e7fd0adbc6816eb8bb552534
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-015.toml b6a5e9069d91eafe01a38ce2655827d24d1b8357
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/02-reading/DC-0006-055.toml 9d39dcf97fddabc32ed1ccaf849931efe2da1d04
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-016.toml fbb1bf92991c96c74282a413ee8ecd65390f12cb
@@ -40,7 +40,7 @@ dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-019.toml
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-020.toml 7e12d9a58552d97fc8c6052760c54e3eb433ab21
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-021.toml 28595a8f6869165e543267cdf8b86db985347f91
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-022.toml 63278e90b8a66e0dd52771265cad0a511bd2a785
-dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-023.toml 5009fea76e68216f6559e7866c1004997a8a734e
+dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-023.toml 7cc3d95fb374927740fb7a768c93b16684907cbd
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-024.toml ab68d73e875488e3a396e8c50b78541715b3df90
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-025.toml 74dbe13de98c7c847f8976bf46ca8f979bccb4cc
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/03-writing/DC-0006-026.toml d910819f029730f4d4985aaa52fad3579fd14dc1
@@ -53,7 +53,7 @@ dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-031.toml
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-032.toml 2edaa461c0c112c0f8db816a51c0ef11ba88d820
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-033.toml c36391d3359fc297e7876ace3b159f4e4167e380
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-034.toml 5ac003f7321dcd1d4f4b59acdb6fcb0aa07c8898
-dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-035.toml e15eebd92a5bcc353b4debc07abc1c1cad77f7bb
+dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-035.toml 00fb7871a5206f651da34eb9d4507910eb95d1d6
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/04-opening/DC-0006-036.toml 2bb656966bd634e743aca9dd8b7a537210ebcb4f
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/05-accepting/DC-0006-037.toml d373bc1691962d4f21847294a62471f0bd914b1f
 dc/s2n-quic-dc/spec/.duvet/requirements/0006-streams/05-accepting/DC-0006-038.toml 80ff41fa96a0b2d869c53c5821256a00bf31bc8c
@@ -104,9 +104,9 @@ dc/s2n-quic-dc/spec/rendered/0000-format/01-layout.md ff9b8ba22d37c0fea1e1c75336
 dc/s2n-quic-dc/spec/rendered/0000-format/02-requirements.md 9497db887c52b55a103f48b1e6132a3a71eb4128
 dc/s2n-quic-dc/spec/rendered/0000-format/03-changes.md 76aad2785d6f66cdbc46f88d9a7658ba6d043110
 dc/s2n-quic-dc/spec/rendered/0006-streams/01-streams.md 6ed27d8179bea057708f7414393444f101fec315
-dc/s2n-quic-dc/spec/rendered/0006-streams/02-reading.md 314bf6e3582473cf49b6a78678ae7d799e024043
-dc/s2n-quic-dc/spec/rendered/0006-streams/03-writing.md 18715fe599e0b72c341581cd1a68e8d3b5ba1deb
-dc/s2n-quic-dc/spec/rendered/0006-streams/04-opening.md 03edfe8f80f3923866a37ad713c40f2080a11456
+dc/s2n-quic-dc/spec/rendered/0006-streams/02-reading.md 7e402e03b152374852ee0ce48c10fe8b6f00f9b2
+dc/s2n-quic-dc/spec/rendered/0006-streams/03-writing.md 060ab3bffc54c87dfa06881bf7b4ff6f43d80bb7
+dc/s2n-quic-dc/spec/rendered/0006-streams/04-opening.md 6ce0b7027653c81574d4dd000ac0b374d407fb35
 dc/s2n-quic-dc/spec/rendered/0006-streams/05-accepting.md 66f0d59a2705aec4799dfe7e80184e43b56dcfae
 dc/s2n-quic-dc/spec/rendered/0006-streams/06-request-response.md b1d995799200c99cba0994aa62e84de892d7f39b
 dc/s2n-quic-dc/spec/rfcs/0000-format/01-layout.toml e8b908912e4c97fee1d63587511cd8f08b875213
@@ -114,10 +114,10 @@ dc/s2n-quic-dc/spec/rfcs/0000-format/02-requirements.toml e11116ca56a364bddaf890
 dc/s2n-quic-dc/spec/rfcs/0000-format/03-changes.toml 649a6f376d2c685a7e6cfa5cd45c13803a73c368
 dc/s2n-quic-dc/spec/rfcs/0000-format/rfc.toml 6a896e7c12d978e828e036f3d41da8416ac7da62
 dc/s2n-quic-dc/spec/rfcs/0006-streams/01-streams.toml 117736f66727290bf3149339857b7fa28826ed13
-dc/s2n-quic-dc/spec/rfcs/0006-streams/02-reading.toml 4d9a13a982ff5bb5aff5dbf4cdb4148c521508e9
-dc/s2n-quic-dc/spec/rfcs/0006-streams/03-writing.toml c840e81f9c251f669460db2d33bb06cbc06ced46
-dc/s2n-quic-dc/spec/rfcs/0006-streams/04-opening.toml d0e64c68f3f0cf89e723725cdab5262a67b9f12d
-dc/s2n-quic-dc/spec/rfcs/0006-streams/05-accepting.toml 18ddb1617bb585a5d80ecf9fba4b09885f554ad6
+dc/s2n-quic-dc/spec/rfcs/0006-streams/02-reading.toml cf577bf6f2c2441be9c9b5b70b9e388b699cd19a
+dc/s2n-quic-dc/spec/rfcs/0006-streams/03-writing.toml 61f70a3de2d5c4b8ed3c990f15f12376dc353757
+dc/s2n-quic-dc/spec/rfcs/0006-streams/04-opening.toml e347575831440895b982e6ceb3e811d13ce42fb6
+dc/s2n-quic-dc/spec/rfcs/0006-streams/05-accepting.toml 8bd8dc5ae94b0256348f77ce02c10f17bb6070d0
 dc/s2n-quic-dc/spec/rfcs/0006-streams/06-request-response.toml dc54ccd2c0e04057d8bd866b05678b5d5a78e189
 dc/s2n-quic-dc/spec/rfcs/0006-streams/rfc.toml 0ba710f09762ddc5cea69c598e90c507beb569e4
 dc/s2n-quic-dc/spec/rfcs/index.toml 9e7527777e117be714853ef5380ce70969d9f8a5
