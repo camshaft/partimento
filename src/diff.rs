@@ -744,6 +744,144 @@ rationale = "A part of a request doesn't say what it asks."
         assert_eq!(found, Ok(Vec::new()));
     }
 
+    /// The index of RFC 1, a system's, and of RFCs 100 and 101, contracts.
+    const THREE_INDEX: &str = r#"[[rfc]]
+number = 1
+title = "Requests"
+area = "core"
+
+[[rfc]]
+number = 100
+title = "Answers"
+area = "contracts"
+
+[[rfc]]
+number = 101
+title = "Retries"
+area = "contracts"
+"#;
+
+    /// RFC 1's metadata: a system's RFC, which doesn't hold `contract_version`.
+    const REQUESTS_META: &str = r#"number = 1
+title = "Requests"
+area = "core"
+abstract = "How the program reads requests."
+retired = []
+"#;
+
+    /// RFC 1's one section, of one requirement.
+    const REQUESTS: &str = r#"[section]
+anchor = "requests"
+title = "Requests"
+problem = "The program loses requests."
+motivation = "A read of each request keeps it."
+
+[[requirement]]
+id = "EX-0001-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST read each request."
+binds_to = "system"
+rationale = "A caller sends each request once."
+"#;
+
+    /// RFC 101's metadata, without its `contract_version`.
+    const RETRIES_META: &str = r#"number = 101
+title = "Retries"
+area = "contracts"
+abstract = "How the program retries a failed answer."
+retired = []
+"#;
+
+    /// RFC 101's one section, of one requirement.
+    const RETRIES: &str = r#"[section]
+anchor = "retries"
+title = "Retries"
+problem = "The program drops a failed answer."
+motivation = "A retry of each failed answer keeps it."
+
+[[requirement]]
+id = "EX-0101-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST retry each failed answer."
+binds_to = "system"
+rationale = "A caller waits for each answer."
+"#;
+
+    /// A tree of RFC 1, a system's, beside contract RFCs 100 and 101 at the contract versions
+    /// `answers` and `retries`, whose section files are `sections`, RFC 1's, RFC 100's and RFC
+    /// 101's in that order, with the files the render generates from them.
+    fn three_rfc_tree(answers: u32, retries: u32, sections: [&str; 3]) -> Tree {
+        let [requests, answer, retry] = sections;
+        let answers = format!("{META}contract_version = {answers}\n");
+        let retries = format!("{RETRIES_META}contract_version = {retries}\n");
+        let files = [
+            ("spec.toml", SPEC.to_string()),
+            ("rfcs/index.toml", THREE_INDEX.to_string()),
+            ("rfcs/0001-requests/rfc.toml", REQUESTS_META.to_string()),
+            ("rfcs/0001-requests/01-request.toml", requests.to_string()),
+            ("rfcs/0100-answers/rfc.toml", answers),
+            ("rfcs/0100-answers/01-answer.toml", answer.to_string()),
+            ("rfcs/0101-retries/rfc.toml", retries),
+            ("rfcs/0101-retries/01-retry.toml", retry.to_string()),
+        ];
+        let mut tree = Tree::default();
+        for (path, text) in files {
+            tree.files.insert(path.to_string(), ByteVec::from(text));
+        }
+        let generated = crate::render(&tree).expect("the tree renders");
+        tree.files.extend(generated.files);
+        tree
+    }
+
+    /// `section` with its text `from` written as `to`.
+    fn restated(section: &str, from: &str, to: &str) -> String {
+        let restated = section.replace(from, to);
+        assert_ne!(restated, section, "the section changes");
+        restated
+    }
+
+    #[test]
+    fn each_contract_rfc_changed_without_a_raise_has_a_finding_of_its_own_in_the_rfcs_order() {
+        let base = three_rfc_tree(1, 1, [REQUESTS, SECTION, RETRIES]);
+        let requests = restated(REQUESTS, "each request.", "each request whole.");
+        let answers = changed_section();
+        let retries = restated(RETRIES, "each failed answer.", "each failed answer twice.");
+        let sections = [requests.as_str(), answers.as_str(), retries.as_str()];
+        let answered = unraised_finding("changed EX-0100-001", "EX-0100-001", 1, 1);
+        let message = "the change adds, changes or retires a requirement of contract RFC 101 \
+                       (changed EX-0101-001), and its contract_version is 1 in the head and 1 in \
+                       the base: raise it to 2";
+        // The rfc.toml of `three_rfc_tree` holds RFC 101's `contract_version` at its line 6.
+        let file = "head:rfcs/0101-retries/rfc.toml";
+        let retried = Finding::error(VERSION_RAISED, file, 6, Some("EX-0101-001"), message);
+        // Each of the three RFCs changes its requirement, and neither contract raises its
+        // version: one finding for each contract RFC, in the order of its number, and none for
+        // RFC 1, a system's.
+        let head = three_rfc_tree(1, 1, sections);
+        let expected = vec![answered.clone(), retried];
+        assert_eq!(changes(&base, &head), Err(expected));
+        // A raise of RFC 101's version leaves RFC 100's finding as it was.
+        let head = three_rfc_tree(1, 2, sections);
+        assert_eq!(changes(&base, &head), Err(vec![answered]));
+    }
+
+    #[test]
+    fn a_changed_requirement_of_a_system_rfc_alone_doesnt_need_a_raise() {
+        let base = three_rfc_tree(1, 1, [REQUESTS, SECTION, RETRIES]);
+        let requests = restated(REQUESTS, "each request.", "each request whole.");
+        let head = three_rfc_tree(1, 1, [requests.as_str(), SECTION, RETRIES]);
+        let found = changes(&base, &head);
+        let found = found.map_err(|findings| format!("{findings:?}"));
+        let change = Change {
+            kind: ChangeKind::Changed,
+            requirement: "EX-0001-001".to_string(),
+            binds_to: Binding::System,
+        };
+        assert_eq!(found, Ok(vec![change]));
+    }
+
     #[test]
     fn a_contract_rfc_that_only_the_head_holds_isnt_compared() {
         let mut base = contract_tree(1);
