@@ -172,10 +172,28 @@ mod tests {
         assert_eq!(backend.solve(&[!x, !y]), Answer::Sat);
     }
 
+    /// The count of variables of the wide core's test.
+    const WIDE: usize = 10_000;
+
+    /// A core that needs every one of `WIDE` assumptions holds each of them once, and none of
+    /// the assumptions that the clauses don't need.
+    fn a_core_of_every_assumption<B: Backend + Default>() {
+        let mut backend = B::default();
+        let vars: Vec<Lit> = (0..WIDE).map(|_| backend.new_var()).collect();
+        let free = backend.new_var();
+        backend.add_clause(&vars);
+        let mut assumptions: Vec<Lit> = vars.iter().map(|&var| !var).collect();
+        assumptions.push(free);
+        let mut expected: Vec<Lit> = vars.iter().map(|&var| !var).collect();
+        expected.sort();
+        assert_eq!(core_of(backend.solve(&assumptions)), expected);
+    }
+
     super::backend_tests!(
         satisfiable_without_assumptions,
         core_is_a_subset_of_the_assumptions,
         solves_again_under_new_assumptions,
+        a_core_of_every_assumption,
     );
 
     #[test]
