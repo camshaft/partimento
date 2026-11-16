@@ -1,0 +1,49 @@
+name: check the s2n-quic-dc spec
+
+# A check run, not for merge: runs `partimento check` and `partimento render` over the
+# s2n-quic-dc specification tree of camshaft/s2n-quic pull request #822, at its head commit.
+on:
+  push:
+    branches:
+      - check-s2n-quic-dc-spec-268baef5
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  SPEC: s2n-quic/dc/s2n-quic-dc/spec
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: camshaft/s2n-quic
+          ref: 268baef5fa4514a7f4fb413fc292232d16d148df
+          path: s2n-quic
+          sparse-checkout: dc/s2n-quic-dc/spec
+
+      - name: Install rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+
+      - name: Build partimento
+        run: cargo build --locked --release --bin partimento
+
+      - name: partimento check
+        run: ./target/release/partimento check --root "$SPEC"
+
+      - name: partimento render, and the difference from the committed files
+        if: always()
+        run: |
+          ./target/release/partimento render --root "$SPEC"
+          cd s2n-quic
+          echo "Files the render changed, added or removed:"
+          git status --porcelain -- dc/s2n-quic-dc/spec
+          git diff -- dc/s2n-quic-dc/spec
+          test -z "$(git status --porcelain -- dc/s2n-quic-dc/spec)"
