@@ -693,8 +693,12 @@ rationale = "A part of a request doesn't say what it asks."
     fn with_system_rfc(mut tree: Tree, retired: &str) -> Tree {
         let meta = SYSTEM_META.replace("retired = []", &format!("retired = [{retired}]"));
         let index = format!("{SYSTEM_ROW}\n{INDEX}");
-        tree.files.insert("rfcs/index.toml".to_string(), ByteVec::from(index));
-        tree.files.insert("rfcs/0001-requests/rfc.toml".to_string(), ByteVec::from(meta));
+        tree.files
+            .insert("rfcs/index.toml".to_string(), ByteVec::from(index));
+        tree.files.insert(
+            "rfcs/0001-requests/rfc.toml".to_string(),
+            ByteVec::from(meta),
+        );
         tree
     }
 
