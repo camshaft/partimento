@@ -41,7 +41,23 @@ pub struct Index {
 }
 
 /// One RFC of the index.
+///
+/// Other crates read its fields, and only this module builds it, as it loads the index, so a
+/// field added to it doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let entry = partimento::model::IndexEntry {
+///     number: 1,
+///     line: 1,
+///     title: String::new(),
+///     title_line: 2,
+///     area: String::new(),
+///     area_line: 3,
+///     state: None,
+/// };
+/// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct IndexEntry {
     pub number: u32,
     /// The line of the row's `number`.
@@ -66,7 +82,21 @@ pub enum State {
 }
 
 /// One RFC's directory.
+///
+/// Other crates read its fields and build it only through [`Rfc::new`], so a field added to it
+/// doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let rfc = partimento::model::Rfc {
+///     dir: "rfcs/0001-greetings".to_owned(),
+///     meta_file: "rfcs/0001-greetings/rfc.toml".to_owned(),
+///     number: 1,
+///     meta: None,
+///     sections: Vec::new(),
+/// };
+/// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Rfc {
     /// The directory's path in the tree.
     pub dir: String,
@@ -104,7 +134,26 @@ pub struct Located<T> {
 }
 
 /// An RFC's rfc.toml.
+///
+/// Other crates read its fields, and only this module builds it, as it loads the RFC's
+/// rfc.toml, so a field added to it doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let meta = partimento::model::Meta {
+///     number: 1,
+///     number_line: 1,
+///     title: String::new(),
+///     title_line: 2,
+///     area: String::new(),
+///     area_line: 3,
+///     summary: String::new(),
+///     sources: Vec::new(),
+///     retired: Vec::new(),
+///     contract_version: None,
+/// };
+/// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Meta {
     pub number: u32,
     /// The line of its `number`.
@@ -126,8 +175,21 @@ pub struct Meta {
 }
 
 /// A source of an RFC: a design by reference and version, or an earlier file by path and commit.
+///
+/// Other crates read its fields, and only this module builds it, as it loads the RFC's
+/// rfc.toml, so a field added to it doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let source = partimento::model::Source {
+///     design: Some("designs/greetings".to_owned()),
+///     version: Some(1),
+///     path: None,
+///     commit: None,
+/// };
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Source {
     pub design: Option<String>,
     pub version: Option<u32>,
@@ -136,7 +198,21 @@ pub struct Source {
 }
 
 /// One section file.
+///
+/// Other crates read its fields and build it only through [`Section::new`], so a field added
+/// to it doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let section = partimento::model::Section {
+///     file: "rfcs/0001-greetings/01-greeting.toml".to_owned(),
+///     line: 1,
+///     fields: Vec::new(),
+///     requirements: Vec::new(),
+///     kinds: Vec::new(),
+/// };
+/// ```
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Section {
     /// The file's path in the tree.
     pub file: String,
@@ -162,11 +238,30 @@ pub struct Block {
 }
 
 /// One field of a table, with the line of its key.
+///
+/// Other crates read its fields and build it only through [`Field::new`], so a field added to
+/// it doesn't break them:
+///
+/// ```compile_fail,E0639
+/// let field = partimento::model::Field {
+///     key: "title".to_owned(),
+///     line: 1,
+///     value: toml::Value::Boolean(true),
+/// };
+/// ```
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Field {
     pub key: String,
     pub line: u32,
     pub value: toml::Value,
+}
+
+impl Field {
+    /// The field of key `key`, at line `line` of its table's file, that holds `value`.
+    pub fn new(key: String, line: u32, value: toml::Value) -> Self {
+        Self { key, line, value }
+    }
 }
 
 impl Section {
@@ -657,5 +752,13 @@ state = "planned"
         assert!(section.fields.is_empty());
         assert!(section.requirements.is_empty());
         assert!(section.kinds.is_empty());
+    }
+
+    #[test]
+    fn a_new_field_holds_its_key_line_and_value() {
+        let field = Field::new("title".to_owned(), 2, toml::Value::Boolean(true));
+        assert_eq!(field.key, "title");
+        assert_eq!(field.line, 2);
+        assert_eq!(field.value, toml::Value::Boolean(true));
     }
 }
