@@ -1450,11 +1450,7 @@ last = 99
     }
 
     fn field(key: &str, line: u32, value: Value) -> Field {
-        Field {
-            key: key.to_owned(),
-            line,
-            value,
-        }
+        Field::new(key.to_owned(), line, value)
     }
 
     /// The identifier of RFC 0001's requirement `n`.

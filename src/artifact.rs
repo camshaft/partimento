@@ -658,16 +658,11 @@ impl<'a> Reader<'a> {
     fn section(&mut self) -> Option<Section> {
         let file = self.text()?;
         let line = self.u32()?;
-        let fields = self.fields()?;
-        let requirements = self.list(Self::block)?;
-        let kinds = self.list(Self::block)?;
-        Some(Section {
-            file,
-            line,
-            fields,
-            requirements,
-            kinds,
-        })
+        let mut section = Section::new(file, line);
+        section.fields = self.fields()?;
+        section.requirements = self.list(Self::block)?;
+        section.kinds = self.list(Self::block)?;
+        Some(section)
     }
 
     fn block(&mut self) -> Option<Block> {
@@ -684,7 +679,7 @@ impl<'a> Reader<'a> {
         let key = self.text()?;
         let line = self.u32()?;
         let value = self.value()?;
-        Some(Field { key, line, value })
+        Some(Field::new(key, line, value))
     }
 
     fn value(&mut self) -> Option<Value> {
@@ -738,32 +733,26 @@ table = { key = "value", nested = { list = [] } }
         let fields = |first: u32| -> Vec<Field> {
             (first..)
                 .zip(&table)
-                .map(|(line, (key, value))| Field {
-                    key: key.clone(),
-                    line,
-                    value: value.clone(),
-                })
+                .map(|(line, (key, value))| Field::new(key.clone(), line, value.clone()))
                 .collect()
         };
-        Section {
-            file: "rfcs/0001-greetings/01-greeting.toml".to_string(),
-            line: 1,
-            fields: fields(2),
-            requirements: vec![
-                Block {
-                    line: 20,
-                    fields: fields(21),
-                },
-                Block {
-                    line: 40,
-                    fields: Vec::new(),
-                },
-            ],
-            kinds: vec![Block {
-                line: 60,
-                fields: fields(61),
-            }],
-        }
+        let mut section = Section::new("rfcs/0001-greetings/01-greeting.toml".to_string(), 1);
+        section.fields = fields(2);
+        section.requirements = vec![
+            Block {
+                line: 20,
+                fields: fields(21),
+            },
+            Block {
+                line: 40,
+                fields: Vec::new(),
+            },
+        ];
+        section.kinds = vec![Block {
+            line: 60,
+            fields: fields(61),
+        }];
+        section
     }
 
     fn findings() -> Vec<Finding> {

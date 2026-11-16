@@ -507,11 +507,7 @@ mod tests {
 
     #[test]
     fn a_value_that_isnt_a_string_breaks_neither_form() {
-        let field = Field {
-            key: "anchor".to_string(),
-            line: 2,
-            value: Value::Integer(5),
-        };
+        let field = Field::new("anchor".to_string(), 2, Value::Integer(5));
         assert_eq!(string(&field), "");
         assert!(is_anchor(string(&field)));
         assert!(!holds_line_break(string(&field)));
