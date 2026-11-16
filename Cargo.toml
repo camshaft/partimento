@@ -36,3 +36,10 @@ required-features = ["cli"]
 name = "timing"
 path = "tests/timing.rs"
 harness = false
+
+# Prints the time of each step of a check of a wide `exactly_one` composition, in each CI run's
+# log.
+[[test]]
+name = "wide_timing"
+path = "tests/wide_timing.rs"
+harness = false
