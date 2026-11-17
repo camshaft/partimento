@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/camshaft/partimento/compare/v0.6.1...v0.7.0) - 2026-11-16
+
+### Added
+
+- diff fails a change of a contract RFC's requirements that doesn't raise its contract_version ([#99](https://github.com/camshaft/partimento/pull/99))
+- [**breaking**] mark the model's shared types `#[non_exhaustive]` and build them through constructors ([#97](https://github.com/camshaft/partimento/pull/97))
+- plan the files a render writes and removes ([#96](https://github.com/camshaft/partimento/pull/96))
+
+### Fixed
+
+- show a composed `exactly_one`'s `<->` with only the parts a conflict names ([#93](https://github.com/camshaft/partimento/pull/93))
+
+### Other
+
+- diff finds one unraised contract version for each contract RFC, and none for a system RFC ([#102](https://github.com/camshaft/partimento/pull/102))
+- diff counts a change for the RFC that holds the requirement, not its identifier's ([#101](https://github.com/camshaft/partimento/pull/101))
+- make solves under one assumption per part linear in the parts ([#95](https://github.com/camshaft/partimento/pull/95))
+- a required requirement tied to a forbidden one by a `logic` formula, beside the same tie as relations ([#94](https://github.com/camshaft/partimento/pull/94))
+- Build `Section` and `Rfc` through constructors ([#92](https://github.com/camshaft/partimento/pull/92))
+
 ## [0.6.1](https://github.com/camshaft/partimento/compare/v0.6.0...v0.6.1) - 2026-11-15
 
 ### Added
