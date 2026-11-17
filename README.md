@@ -186,7 +186,9 @@ hold:
 - `compose`, one of `atomic`, `all_of`, `any_of`, `exactly_one` and `unless`, with its `parts`;
 - `conditions` and `logic`;
 - `params`, each a table that holds the parameter's `name`, its `type`, its `unit`, and either
-  its `bound` (`min`, `max` or `exact`) with its `value`, or its `source`.
+  its `bound` (`min`, `max` or `exact`) with its `value`, or its `source`;
+- `same_contract_version`, an array of two or more RFC numbers, the requirement's own RFC among
+  them, each a contract RFC of the tree: the RFCs it lists hold one `contract_version`.
 
 A parameter's `type` is `count`, `duration`, `size`, `rate` or `fraction`, and its `unit` is `s`
 for a duration, `B` for a size and `per_s` for a rate; a count and a fraction don't hold a unit.
@@ -261,6 +263,10 @@ the requirement's part. The check runs:
   each statement, the fields of each section and requirement and their values, each parameter's
   type, unit, value and source, the form of each section's anchor and title, each RFC's area and
   `contract_version`, the agreement of `rfc.toml` and the index, and the implementation terms;
+- the rule `contract-version-shared`: that each requirement's `same_contract_version` lists two
+  or more distinct contract RFCs of the tree, its own RFC among them, and that each RFC it lists
+  holds the highest `contract_version` of them, with a finding at the `contract_version` line of
+  each RFC below it;
 - the fields of each kind table and their values, with the rule `kind`;
 - the registry's rules: that the file is there where spec.toml sets `paths.registry`, the fields
   of each entry and their values, that each entry matches a kind table, and that the registry
@@ -350,8 +356,9 @@ Where the change adds, changes or retires a requirement of a contract RFC that b
 and the RFC's `contract_version` in the head isn't greater than in the base, `diff` prints a
 finding of the rule `contract-version-raised` for each such RFC instead, at the
 `contract_version` line of the head's `rfc.toml`, and exits with 1. The RFC of a change is the
-RFC whose files hold the requirement in the head, or in the base for a retired one, and a change
-of `label` or `rationale` alone doesn't need a raise.
+RFC whose files hold the requirement in the head, or in the base for a retired one. A change of a
+requirement's `same_contract_version` is a change of the requirement, which needs a raise; a
+change of `label` or `rationale` alone doesn't.
 
 ## The library
 

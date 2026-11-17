@@ -1,0 +1,14 @@
+[section]
+anchor = "answers"
+title = "Answers"
+problem = "An answer and its question can state different versions."
+motivation = "A version that both RFCs hold is one version of the whole exchange."
+
+[[requirement]]
+id = "EX-0100-001"
+level = "MUST"
+polarity = "required"
+statement = "The metadata of RFC 0100 and the metadata of RFC 0101 MUST hold the same contract version."
+binds_to = "process"
+same_contract_version = [100, 101]
+rationale = "Each version a question states is a version of both RFCs."
