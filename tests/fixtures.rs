@@ -634,12 +634,24 @@ fn an_rfc_a_version_behind_its_group_fails_at_its_contract_version() {
 fn a_list_that_isnt_a_group_of_held_contract_rfcs_fails_at_its_line() {
     let at = "error[contract-version-shared] rfcs/0100-answers/01-answer.toml:13: EX-0100-001: ";
     let cases = [
-        ("[100, 5]", "RFC 5 isn't a contract: spec.toml's contracts hold RFCs 100 to 199"),
+        (
+            "[100, 5]",
+            "RFC 5 isn't a contract: spec.toml's contracts hold RFCs 100 to 199",
+        ),
         ("[100, 103]", "the set doesn't hold RFC 103"),
-        ("[100]", "a list holds two RFC numbers or more, and this one holds 1"),
-        ("[101, 102]", "the list leaves out RFC 100, which holds the requirement"),
+        (
+            "[100]",
+            "a list holds two RFC numbers or more, and this one holds 1",
+        ),
+        (
+            "[101, 102]",
+            "the list leaves out RFC 100, which holds the requirement",
+        ),
         ("[100, 100]", "the list holds RFC 100 more than once"),
-        ("100", "`same_contract_version` is an array of RFC numbers, each an integer"),
+        (
+            "100",
+            "`same_contract_version` is an array of RFC numbers, each an integer",
+        ),
     ];
     for (list, message) in cases {
         let list = format!("same_contract_version = {list}\n");
@@ -657,7 +669,11 @@ fn the_list_of_a_retired_identifier_isnt_read() {
     assert!(found.is_empty(), "{found}");
     let report = partimento::check_default(&tree, &Options::default());
     let retired = partimento::rules::IDENTIFIER_RETIRED;
-    assert!(report.findings.iter().any(|f| f.rule == retired), "{}", lines(&report));
+    assert!(
+        report.findings.iter().any(|f| f.rule == retired),
+        "{}",
+        lines(&report)
+    );
 }
 
 #[test]
@@ -669,7 +685,10 @@ fn a_list_written_on_a_requirement_changes_it_in_a_diff() {
     ]);
     let found = partimento::diff_with_versions(&base, &head);
     let (changes, versions) = found.unwrap_or_else(|findings| panic!("{}", each_line(&findings)));
-    assert_eq!(each_line(&changes), "changed EX-0100-001 binds_to=process\n");
+    assert_eq!(
+        each_line(&changes),
+        "changed EX-0100-001 binds_to=process\n"
+    );
     let raised = |rfc| VersionChange {
         rfc,
         base: 2,

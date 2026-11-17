@@ -332,7 +332,9 @@ fn check_group(
 ) {
     let mut listed = Vec::new();
     for &number in numbers {
-        let contract = u32::try_from(number).ok().filter(|rfc| config.is_contract(*rfc));
+        let contract = u32::try_from(number)
+            .ok()
+            .filter(|rfc| config.is_contract(*rfc));
         match contract.map(|rfc| held.get(&rfc)) {
             Some(Some(rfc)) => listed.push(*rfc),
             Some(None) => {
@@ -394,11 +396,15 @@ fn group(value: &Value) -> Result<Vec<i64>, String> {
         .as_array()
         .and_then(|items| items.iter().map(Value::as_integer).collect());
     let Some(numbers) = numbers else {
-        return Err(format!("`{SAME_VERSION}` is an array of RFC numbers, each an integer"));
+        return Err(format!(
+            "`{SAME_VERSION}` is an array of RFC numbers, each an integer"
+        ));
     };
     if numbers.len() < 2 {
         let count = numbers.len();
-        return Err(format!("a list holds two RFC numbers or more, and this one holds {count}"));
+        return Err(format!(
+            "a list holds two RFC numbers or more, and this one holds {count}"
+        ));
     }
     let mut seen = BTreeSet::new();
     if let Some(number) = numbers.iter().find(|number| !seen.insert(**number)) {

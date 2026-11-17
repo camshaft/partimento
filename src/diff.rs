@@ -1010,7 +1010,10 @@ same_contract_version = [1, 2]
     #[test]
     fn a_reorder_of_same_contract_version_isnt_a_change_and_a_list_written_is() {
         let base = block(FULL, "");
-        assert!(same_requirement(&base, &block(FULL, "same_contract_version = [2, 1]")));
+        assert!(same_requirement(
+            &base,
+            &block(FULL, "same_contract_version = [2, 1]")
+        ));
         let left_out = block(PLAIN, "");
         let written = block(PLAIN, "same_contract_version = [1, 2]");
         assert!(!same_requirement(&left_out, &written));
