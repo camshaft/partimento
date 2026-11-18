@@ -1013,8 +1013,9 @@ version = 1
         assert_eq!(findings.len(), 3, "{findings:?}");
         assert_eq!(findings[0].rule, crate::source::RULE);
         assert_eq!(findings[0].file, UNPARSED);
-        let pair = "the section files `01-greeting.toml` and `01-welcome.toml` begin with the same \
-                    number, 01";
+        let pair =
+            "the section files `01-greeting.toml` and `01-welcome.toml` begin with the same \
+             number, 01";
         let three = "the section files `03-alpha.toml`, `03-beta.toml` and `03-gamma.toml` begin \
                      with the same number, 03";
         let expected = [
