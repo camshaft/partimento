@@ -175,9 +175,8 @@ fn each_broken_entry_fails_at_its_line() {
 fn a_defined_by_that_a_section_file_retires_says_where_it_is_retired() {
     // The section file retires EX-0001-004 at its line 2, after a comment line, and the
     // registry's entry `h` holds it as its defined_by at line 15.
-    let section = format!(
-        "# An identifier the section retires.\nretired = [\"EX-0001-004\"]\n\n{GREETING}"
-    );
+    let section =
+        format!("# An identifier the section retires.\nretired = [\"EX-0001-004\"]\n\n{GREETING}");
     let registry = ENTRIES.replacen("\"EX-0001-002\"", "\"EX-0001-004\"", 1);
     assert_ne!(registry, ENTRIES, "entry `h` holds EX-0001-002");
     let mut tree = Tree::default();
@@ -187,7 +186,8 @@ fn a_defined_by_that_a_section_file_retires_says_where_it_is_retired() {
             REGISTRY => registry.as_str(),
             _ => text,
         };
-        tree.files.insert(path.to_string(), ByteVec::from(text.to_string()));
+        tree.files
+            .insert(path.to_string(), ByteVec::from(text.to_string()));
     }
     let generated = partimento::render(&tree).expect("the tree renders");
     tree.files.extend(generated.files);
