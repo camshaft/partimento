@@ -807,12 +807,12 @@ impl<B: Backend> Encoding<B> {
             Formula::Or(parts) if parts.is_empty() => self.constant(false),
             Formula::And(_) => {
                 let x = self.backend.new_var();
-                let mut any_false = vec![x];
+                let mut any_false = Vec::new();
                 for lit in lits {
                     self.backend.add_clause(&[!x, lit]);
                     any_false.push(!lit);
                 }
-                self.backend.add_clause(&any_false);
+                self.add_chained_clause(x, &any_false);
                 x
             }
             Formula::Or(_) => {
@@ -1391,6 +1391,46 @@ mod tests {
         assert!(sat(&mut encoding, &assume(&names, &[0, PARTS - 1])));
     }
 
+    /// `R <-> (P0 & ... & Pn)`, as an `all_of` composition reads, of `PARTS` atoms encodes in
+    /// clauses linear in its parts and of at most three literals each, so a solve that assumes
+    /// each part true looks at each clause a bounded number of times, and holds where `R` is
+    /// true exactly where every part is. Of two to five parts it agrees with its truth table.
+    fn wide_all_of<B: Backend + Default>() {
+        for count in 2..=5usize {
+            let names: Vec<String> = (0..count).map(|i| format!("P{i}")).collect();
+            let text = format!("R <-> ({})", names.join(" & "));
+            let mut encoding = Encoding::new(B::default(), &set(&[text.as_str()]));
+            for row in 0..1usize << (count + 1) {
+                let true_at: Vec<usize> = (0..count).filter(|&i| (row >> i) & 1 == 1).collect();
+                let r = (row >> count) & 1 == 1;
+                let mut atoms = assume(&names, &true_at);
+                atoms.push(("R", r));
+                let holds = r == (true_at.len() == count);
+                let found = sat(&mut encoding, &atoms);
+                assert_eq!(found, holds, "{text} with R={r} and {true_at:?} true");
+            }
+        }
+        let names: Vec<String> = (0..PARTS).map(|i| format!("P{i}")).collect();
+        let conjunction = names.join(" & ");
+        let parts: Vec<Formula> = names.iter().map(Formula::atom).collect();
+        assert_eq!(parse(&conjunction).unwrap(), Formula::And(parts));
+        let text = format!("R <-> ({conjunction})");
+        let (mut encoding, clauses, widest) = tallied::<B>(&text);
+        assert!(clauses <= 3 * PARTS, "{clauses} clauses for {PARTS} parts");
+        assert!(widest <= 3, "a clause of {widest} literals");
+        let mut atoms: Vec<(&str, bool)> = names.iter().map(|n| (n.as_str(), true)).collect();
+        atoms.push(("R", true));
+        for r in [true, false] {
+            atoms[PARTS].1 = r;
+            assert_eq!(sat(&mut encoding, &atoms), r, "every part true and R={r}");
+            for part in [0, PARTS / 2, PARTS - 1] {
+                atoms[part].1 = false;
+                assert_eq!(sat(&mut encoding, &atoms), !r, "P{part} false and R={r}");
+                atoms[part].1 = true;
+            }
+        }
+    }
+
     /// An `exactly_one(B, ...)` nested `DEPTH` deep reads, prints, clones, drops and encodes
     /// with each part once, so its clauses grow with the depth alone. A call over `B` and a part
     /// `F` holds where `B` and `F` differ, so an even count of calls holds where `A` does.
@@ -1430,6 +1470,7 @@ mod tests {
         deep_implications,
         wide_exactly_one,
         wide_at_least_one,
+        wide_all_of,
         nested_exactly_one,
     );
 }
