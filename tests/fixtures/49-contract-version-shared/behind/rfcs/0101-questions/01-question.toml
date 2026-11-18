@@ -1,0 +1,13 @@
+[section]
+anchor = "questions"
+title = "Questions"
+problem = "The program reads part of a question."
+motivation = "A question read whole can be answered."
+
+[[requirement]]
+id = "EX-0101-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST read each question whole."
+binds_to = "system"
+rationale = "A question cut short can't be answered."

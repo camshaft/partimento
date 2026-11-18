@@ -1,0 +1,6 @@
+number = 102
+title = "Hints"
+area = "contracts"
+abstract = "How the program prints hints."
+retired = []
+contract_version = 2

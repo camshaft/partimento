@@ -3,10 +3,10 @@
 //!
 //! A requirement is the same in both trees where both hold its identifier, whichever file holds
 //! it. It is changed where its statement, level, polarity, conditions, composition, parts,
-//! relations, logic, parameters or `binds_to` differ, with each of them that a block leaves out
-//! read at its default and each list read as its items in any order, so that a move, a reorder of
-//! a list or a default written out isn't a change, and neither is a change of `label` or
-//! `rationale` alone.
+//! relations, logic, parameters, `binds_to` or `same_contract_version` differ, with each of them
+//! that a block leaves out read at its default and each list read as its items in any order, so
+//! that a move, a reorder of a list or a default written out isn't a change, and neither is a
+//! change of `label` or `rationale` alone.
 //!
 //! A change that adds, changes or retires a requirement of a contract RFC that both trees hold
 //! fails with the rule [`VERSION_RAISED`] where the RFC's `contract_version` in the head isn't
@@ -34,10 +34,18 @@ const COMPARED: &[&str] = &[
     "logic",
     "params",
     "binds_to",
+    "same_contract_version",
 ];
 
 /// The fields whose value is a list of items in any order, empty where a block leaves it out.
-const LISTS: &[&str] = &["conditions", "parts", "relations", "logic", "params"];
+const LISTS: &[&str] = &[
+    "conditions",
+    "parts",
+    "relations",
+    "logic",
+    "params",
+    "same_contract_version",
+];
 
 /// The composition of a block that leaves `compose` out.
 const ATOMIC: &str = "atomic";
@@ -56,7 +64,7 @@ pub enum ChangeKind {
     /// The head holds the requirement's identifier, and the base doesn't.
     Added,
     /// Both trees hold it, and its statement, level, polarity, conditions, composition, parts,
-    /// relations, logic, parameters or `binds_to` differ.
+    /// relations, logic, parameters, `binds_to` or `same_contract_version` differ.
     Changed,
     /// The base holds it, and the head doesn't.
     Retired,
@@ -916,6 +924,7 @@ relations = [{ kind = "depends_on", target = "EX-0001-004" }]
 logic = ["EX-0001-002"]
 params = [{ name = "delay", value = 5 }]
 binds_to = "system"
+same_contract_version = [1, 2]
 "#;
 
     /// A change of each compared field of `FULL` that fixture 15 doesn't change alone. A fixture
@@ -930,6 +939,7 @@ binds_to = "system"
         r#"relations = [{ kind = "depends_on", target = "EX-0001-007" }]"#,
         r#"logic = ["EX-0001-005"]"#,
         r#"params = [{ name = "delay", value = 10 }]"#,
+        r#"same_contract_version = [1, 3]"#,
     ];
 
     fn list(items: &[&str]) -> Value {
@@ -995,5 +1005,18 @@ binds_to = "system"
         assert!(written.field("conditions").is_some());
         assert!(same_requirement(&left_out, &written));
         assert!(same_requirement(&written, &left_out));
+    }
+
+    #[test]
+    fn a_reorder_of_same_contract_version_isnt_a_change_and_a_list_written_is() {
+        let base = block(FULL, "");
+        assert!(same_requirement(
+            &base,
+            &block(FULL, "same_contract_version = [2, 1]")
+        ));
+        let left_out = block(PLAIN, "");
+        let written = block(PLAIN, "same_contract_version = [1, 2]");
+        assert!(!same_requirement(&left_out, &written));
+        assert!(!same_requirement(&written, &left_out));
     }
 }

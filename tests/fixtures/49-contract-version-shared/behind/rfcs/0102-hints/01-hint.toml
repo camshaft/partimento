@@ -1,0 +1,13 @@
+[section]
+anchor = "hints"
+title = "Hints"
+problem = "A person doesn't see why a question went unanswered."
+motivation = "A hint says what the program needs."
+
+[[requirement]]
+id = "EX-0102-001"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a hint for each question it can't answer."
+binds_to = "system"
+rationale = "A person who reads the hint can ask again."

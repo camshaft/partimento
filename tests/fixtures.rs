@@ -555,6 +555,148 @@ fn paths_that_overlap_fail_at_the_later_key() {
     assert_eq!(lines(&report), named("05-key-word").expected);
 }
 
+/// The files of fixture 49-contract-version-shared's tree: its contract RFCs 100, 101 and 102
+/// hold versions 2, 1 and 2, and its requirement EX-0100-001 lists RFCs 100 and 101 in
+/// `same_contract_version`, so RFC 101 is a version behind its group.
+const SHARED: &[(&str, &str)] = diff_tree!(
+    "49-contract-version-shared",
+    "behind",
+    "spec.toml",
+    "rfcs/index.toml",
+    "rfcs/0100-answers/rfc.toml",
+    "rfcs/0100-answers/01-answer.toml",
+    "rfcs/0101-questions/rfc.toml",
+    "rfcs/0101-questions/01-question.toml",
+    "rfcs/0102-hints/rfc.toml",
+    "rfcs/0102-hints/01-hint.toml",
+);
+
+/// The finding the check of fixture 49-contract-version-shared returns: RFC 101 is a version
+/// behind the group of EX-0100-001.
+const SHARED_EXPECTED: &str = include_str!("fixtures/49-contract-version-shared/expected.txt");
+
+/// The file of fixture 49 that holds EX-0100-001, and the line of its list there.
+const ANSWER: &str = "rfcs/0100-answers/01-answer.toml";
+const GROUP: &str = "same_contract_version = [100, 101]\n";
+
+/// The rfc.toml files of fixture 49's RFCs 100 and 101.
+const ANSWERS: &str = "rfcs/0100-answers/rfc.toml";
+const QUESTIONS: &str = "rfcs/0101-questions/rfc.toml";
+
+/// The change of fixture 49 that raises RFC 101 to version 2, the version of its group.
+const RAISE_101: (&str, &str, &str) = (QUESTIONS, "contract_version = 1", "contract_version = 2");
+
+/// Fixture 49-contract-version-shared's tree with each change of `changes` made: the file at its
+/// path holds its third text instead of its second, which the file holds once.
+fn shared_with(changes: &[(&str, &str, &str)]) -> Tree {
+    let mut tree = Tree::default();
+    for &(path, text) in SHARED {
+        let mut text = text.to_string();
+        for &(changed, from, to) in changes {
+            if changed == path {
+                assert_eq!(text.matches(from).count(), 1, "{path}: {from:?}");
+                text = text.replace(from, to);
+            }
+        }
+        tree.files.insert(path.to_string(), ByteVec::from(text));
+    }
+    tree
+}
+
+/// The findings of the rule `contract-version-shared` in the check of `tree`, one a line.
+fn shared_findings(tree: &Tree) -> String {
+    let report = partimento::check_default(tree, &Options::default());
+    let rule = partimento::rules::CONTRACT_VERSION_SHARED;
+    let found: Vec<_> = report.findings.iter().filter(|f| f.rule == rule).collect();
+    each_line(&found)
+}
+
+#[test]
+fn a_group_whose_rfcs_hold_one_version_passes() {
+    let tree = shared_with(&[RAISE_101]);
+    let found = shared_findings(&tree);
+    assert!(found.is_empty(), "{found}");
+    // The tree doesn't hold its generated files, so its format rules pass where it renders.
+    if let Err(findings) = partimento::render(&tree) {
+        panic!("{}", each_line(&findings));
+    }
+}
+
+#[test]
+fn an_rfc_a_version_behind_its_group_fails_at_its_contract_version() {
+    let tree = tree_of(SHARED);
+    assert_eq!(shared_findings(&tree), SHARED_EXPECTED);
+    let findings = partimento::render(&tree).expect_err("RFC 101 is a version behind");
+    assert_eq!(each_line(&findings), SHARED_EXPECTED);
+}
+
+#[test]
+fn a_list_that_isnt_a_group_of_held_contract_rfcs_fails_at_its_line() {
+    let at = "error[contract-version-shared] rfcs/0100-answers/01-answer.toml:13: EX-0100-001: ";
+    let cases = [
+        (
+            "[100, 5]",
+            "RFC 5 isn't a contract: spec.toml's contracts hold RFCs 100 to 199",
+        ),
+        ("[100, 103]", "the set doesn't hold RFC 103"),
+        (
+            "[100]",
+            "a list holds two RFC numbers or more, and this one holds 1",
+        ),
+        (
+            "[101, 102]",
+            "the list leaves out RFC 100, which holds the requirement",
+        ),
+        ("[100, 100]", "the list holds RFC 100 more than once"),
+        (
+            "100",
+            "`same_contract_version` is an array of RFC numbers, each an integer",
+        ),
+    ];
+    for (list, message) in cases {
+        let list = format!("same_contract_version = {list}\n");
+        let tree = shared_with(&[RAISE_101, (ANSWER, GROUP, list.as_str())]);
+        assert_eq!(shared_findings(&tree), format!("{at}{message}\n"), "{list}");
+    }
+}
+
+#[test]
+fn the_list_of_a_retired_identifier_isnt_read() {
+    let retire = (ANSWERS, "retired = []", "retired = [\"EX-0100-001\"]");
+    let list = (ANSWER, GROUP, "same_contract_version = [101, 102]\n");
+    let tree = shared_with(&[RAISE_101, retire, list]);
+    let found = shared_findings(&tree);
+    assert!(found.is_empty(), "{found}");
+    let report = partimento::check_default(&tree, &Options::default());
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    assert!(
+        report.findings.iter().any(|f| f.rule == retired),
+        "{}",
+        lines(&report)
+    );
+}
+
+#[test]
+fn a_list_written_on_a_requirement_changes_it_in_a_diff() {
+    let base = shared_with(&[RAISE_101, (ANSWER, GROUP, "")]);
+    let head = shared_with(&[
+        (ANSWERS, "contract_version = 2", "contract_version = 3"),
+        (QUESTIONS, "contract_version = 1", "contract_version = 3"),
+    ]);
+    let found = partimento::diff_with_versions(&base, &head);
+    let (changes, versions) = found.unwrap_or_else(|findings| panic!("{}", each_line(&findings)));
+    assert_eq!(
+        each_line(&changes),
+        "changed EX-0100-001 binds_to=process\n"
+    );
+    let raised = |rfc| VersionChange {
+        rfc,
+        base: 2,
+        head: 3,
+    };
+    assert_eq!(versions, [raised(100), raised(101)]);
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};

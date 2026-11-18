@@ -3,12 +3,12 @@
 //! title, which its rendered heading holds, and the implementation terms a statement names.
 
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use toml::Value;
 
 use crate::config::Config;
-use crate::model::{Block, Field, Section, Set, INDEX};
+use crate::model::{Block, Field, Rfc, Section, Set, INDEX};
 use crate::Finding;
 
 /// An identifier that isn't of the form `<prefix>-<rfc>-<n>`.
@@ -45,6 +45,11 @@ pub const INDEX_AGREEMENT: &str = "index-agreement";
 /// A contract's RFC without `contract_version`, a `contract_version` below 1, or one that an
 /// RFC outside the contracts holds.
 pub const CONTRACT_VERSION: &str = "contract-version";
+/// A requirement's `same_contract_version` that isn't an array of two or more distinct whole
+/// numbers, that lists a number that isn't a contract RFC of the set, or that leaves out the RFC
+/// that holds the requirement; or an RFC of such a list whose `contract_version` is below the
+/// highest of the list's RFCs.
+pub const CONTRACT_VERSION_SHARED: &str = "contract-version-shared";
 
 const REQUIREMENT_FIELDS: &[&str] = &[
     "id",
@@ -59,6 +64,7 @@ const REQUIREMENT_FIELDS: &[&str] = &[
     "logic",
     "params",
     "binds_to",
+    SAME_VERSION,
     "rationale",
 ];
 const REQUIRED_REQUIREMENT_FIELDS: &[&str] = &[
@@ -74,6 +80,9 @@ const REQUIRED_SECTION_FIELDS: &[&str] = &["anchor", "title", "problem", "motiva
 const POLARITIES: &[&str] = &["required", "forbidden"];
 const COMPOSITIONS: &[&str] = &["atomic", "all_of", "any_of", "exactly_one", "unless"];
 const BINDINGS: &[&str] = &["system", "process"];
+/// The requirement field that lists the RFCs that hold one contract version, the requirement's
+/// own RFC among them.
+const SAME_VERSION: &str = "same_contract_version";
 /// The message of an `anchor-form` finding; it doesn't quote the anchor, which may hold a line
 /// break.
 const ANCHOR_MESSAGE: &str =
@@ -112,6 +121,7 @@ impl Place<'_, '_> {
 /// Adds a finding for each format rule that the set breaks.
 pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
     check_rfcs(config, set, findings);
+    check_groups(config, set, findings);
     let mut cx = Context {
         config,
         levels: config.levels.iter().map(String::as_str).collect(),
@@ -271,6 +281,138 @@ fn area_problem(config: &Config, area: &str, number: u32) -> Option<String> {
     ))
 }
 
+/// Adds a finding for each requirement whose `same_contract_version` lists a number that isn't
+/// a contract RFC of the set or leaves out the RFC whose file holds the requirement, and, where
+/// the set holds each RFC the list holds, one for each of those RFCs whose `contract_version` is
+/// below the highest among them. It doesn't read a requirement whose identifier the set retires,
+/// or a list whose form `check_block` refuses.
+fn check_groups(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
+    let mut held = BTreeMap::new();
+    let mut retired = BTreeSet::new();
+    for rfc in &set.rfcs {
+        held.entry(rfc.number).or_insert(rfc);
+        if let Some(meta) = &rfc.meta {
+            retired.extend(meta.retired.iter().map(|id| id.value.as_str()));
+        }
+    }
+    for rfc in &set.rfcs {
+        for section in &rfc.sections {
+            for block in &section.requirements {
+                let id = block.text("id");
+                if id.is_some_and(|id| retired.contains(id)) {
+                    continue;
+                }
+                let Some(field) = block.field(SAME_VERSION) else {
+                    continue;
+                };
+                let Ok(numbers) = group(&field.value) else {
+                    continue;
+                };
+                let mut place = Place {
+                    findings,
+                    file: section.file.as_str(),
+                    requirement: id,
+                };
+                check_group(config, &held, rfc.number, &numbers, field.line, &mut place);
+            }
+        }
+    }
+}
+
+/// The findings of one requirement's `same_contract_version`, the list `numbers` at line `line`
+/// of `place`'s file, where RFC `own` holds the requirement and `held` holds each RFC of the set
+/// by its number.
+fn check_group(
+    config: &Config,
+    held: &BTreeMap<u32, &Rfc>,
+    own: u32,
+    numbers: &[i64],
+    line: u32,
+    place: &mut Place,
+) {
+    let mut listed = Vec::new();
+    for &number in numbers {
+        let contract = u32::try_from(number)
+            .ok()
+            .filter(|rfc| config.is_contract(*rfc));
+        match contract.map(|rfc| held.get(&rfc)) {
+            Some(Some(rfc)) => listed.push(*rfc),
+            Some(None) => {
+                let message = format!("the set doesn't hold RFC {number}");
+                place.error(CONTRACT_VERSION_SHARED, line, message);
+            }
+            None => {
+                let message = format!("RFC {number} isn't a contract: {}", contracts(config));
+                place.error(CONTRACT_VERSION_SHARED, line, message);
+            }
+        }
+    }
+    if !numbers.contains(&i64::from(own)) {
+        let message = format!("the list leaves out RFC {own}, which holds the requirement");
+        place.error(CONTRACT_VERSION_SHARED, line, message);
+    }
+    if listed.len() < numbers.len() {
+        return;
+    }
+    let versions: Vec<_> = listed
+        .iter()
+        .filter_map(|rfc| Some((*rfc, rfc.meta.as_ref()?.contract_version.as_ref()?)))
+        .collect();
+    let Some(highest) = versions.iter().map(|(_, version)| version.value).max() else {
+        return;
+    };
+    let named = place.requirement.unwrap_or("the requirement");
+    for (rfc, version) in versions {
+        if version.value >= highest {
+            continue;
+        }
+        let (number, value) = (rfc.number, version.value);
+        let message = format!(
+            "RFC {number}'s contract_version is {value}, below {highest}, the highest of the RFCs \
+             that {named} lists: raise it to {highest}"
+        );
+        let (file, at) = (rfc.meta_file.as_str(), version.line);
+        let requirement = place.requirement;
+        let finding = Finding::error(CONTRACT_VERSION_SHARED, file, at, requirement, message);
+        place.findings.push(finding);
+    }
+}
+
+/// The RFC numbers of the contracts, as a finding names them.
+fn contracts(config: &Config) -> String {
+    match &config.contracts {
+        Some(group) => {
+            let (first, last) = (group.rfcs.first, group.rfcs.last);
+            format!("spec.toml's contracts hold RFCs {first} to {last}")
+        }
+        None => "spec.toml doesn't set `[contracts]`".to_string(),
+    }
+}
+
+/// The RFC numbers of a `same_contract_version` value, where it is an array of two or more
+/// distinct whole numbers; what is wrong with it where it isn't.
+fn group(value: &Value) -> Result<Vec<i64>, String> {
+    let numbers: Option<Vec<i64>> = value
+        .as_array()
+        .and_then(|items| items.iter().map(Value::as_integer).collect());
+    let Some(numbers) = numbers else {
+        return Err(format!(
+            "`{SAME_VERSION}` is an array of RFC numbers, each an integer"
+        ));
+    };
+    if numbers.len() < 2 {
+        let count = numbers.len();
+        return Err(format!(
+            "a list holds two RFC numbers or more, and this one holds {count}"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    if let Some(number) = numbers.iter().find(|number| !seen.insert(**number)) {
+        return Err(format!("the list holds RFC {number} more than once"));
+    }
+    Ok(numbers)
+}
+
 fn check_block<'a>(
     cx: &mut Context<'a>,
     section: &'a Section,
@@ -290,6 +432,10 @@ fn check_block<'a>(
             let fields = list(REQUIREMENT_FIELDS);
             let message = format!("`{key}` isn't a requirement field; a block holds only {fields}");
             place.error(FIELD_UNKNOWN, field.line, message);
+        } else if key == SAME_VERSION {
+            if let Err(message) = group(&field.value) {
+                place.error(CONTRACT_VERSION_SHARED, field.line, message);
+            }
         } else if let Some(kind) = expected_kind(key, &field.value) {
             place.error(FIELD_VALUE, field.line, format!("`{key}` is {kind}"));
         }
@@ -502,6 +648,30 @@ mod tests {
         assert!(holds_line_break("Saying\rhello"));
         for title in ["Saying hello\n", "\nSaying hello", "Saying hello"] {
             assert!(!holds_line_break(title), "{title:?}");
+        }
+    }
+
+    /// An array of the integers.
+    fn integers(items: &[i64]) -> Value {
+        Value::Array(items.iter().copied().map(Value::Integer).collect())
+    }
+
+    #[test]
+    fn a_group_is_an_array_of_two_or_more_distinct_integers() {
+        assert_eq!(group(&integers(&[100, 101])), Ok(vec![100, 101]));
+        assert_eq!(group(&integers(&[102, 100, 101])), Ok(vec![102, 100, 101]));
+        let mixed = Value::Array(vec![Value::Integer(100), Value::String("101".to_owned())]);
+        let refused = [
+            Value::Integer(100),
+            Value::String("100, 101".to_owned()),
+            integers(&[]),
+            integers(&[100]),
+            integers(&[100, 100]),
+            integers(&[100, 101, 100]),
+            mixed,
+        ];
+        for value in refused {
+            assert!(group(&value).is_err(), "{value:?}");
         }
     }
 

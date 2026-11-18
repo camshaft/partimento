@@ -1,0 +1,1 @@
+error[contract-version-shared] rfcs/0101-questions/rfc.toml:6: EX-0100-001: RFC 101's contract_version is 1, below 2, the highest of the RFCs that EX-0100-001 lists: raise it to 2
