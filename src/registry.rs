@@ -282,7 +282,9 @@ struct Identifiers<'a> {
     held: BTreeSet<&'a str>,
     /// The path of each section file that holds a requirement, by the requirement's identifier.
     sections: BTreeMap<&'a str, BTreeSet<&'a str>>,
-    retired: BTreeSet<&'a str>,
+    /// The file and the line that list each retired identifier, the first in the order of
+    /// `Rfc::retired` where two files list it.
+    retired: BTreeMap<&'a str, (&'a str, u32)>,
 }
 
 impl<'a> Identifiers<'a> {
@@ -297,9 +299,10 @@ impl<'a> Identifiers<'a> {
                 sections.entry(id).or_default().insert(file);
             }
         }
-        let metas = set.rfcs.iter().filter_map(|rfc| rfc.meta.as_ref());
-        let retired = metas.flat_map(|meta| &meta.retired);
-        let retired = retired.map(|id| id.value.as_str()).collect();
+        let mut retired = BTreeMap::new();
+        for (file, id) in set.rfcs.iter().flat_map(|rfc| rfc.retired()) {
+            retired.entry(id.value.as_str()).or_insert((file, id.line));
+        }
         Identifiers {
             held,
             sections,
@@ -551,8 +554,10 @@ fn defined_by_problem(value: &Value, ids: &Identifiers) -> Option<String> {
             "defined_by is {kind}, which isn't the identifier of a requirement"
         ));
     };
-    if ids.retired.contains(id) {
-        Some(format!("defined_by is `{id}`, which an RFC retires"))
+    if let Some((file, line)) = ids.retired.get(id) {
+        Some(format!(
+            "defined_by is `{id}`, which is retired at {file}:{line}"
+        ))
     } else if !ids.held.contains(id) {
         Some(format!(
             "defined_by is `{id}`, which no requirement of a written RFC holds"

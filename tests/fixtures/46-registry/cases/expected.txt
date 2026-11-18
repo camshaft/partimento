@@ -12,7 +12,7 @@ error[registry] registry/identifiers.toml:45: identifies is `a place`, which isn
 error[registry] registry/identifiers.toml:53: identifies is `a date`, which isn't a kind table's name
 error[registry] registry/identifiers.toml:56: defined_by is `EX-0001-009`, which no requirement of a written RFC holds
 error[registry] registry/identifiers.toml:61: identifies is `a week`, which isn't a kind table's name
-error[registry] registry/identifiers.toml:64: defined_by is `EX-0001-003`, which an RFC retires
+error[registry] registry/identifiers.toml:64: defined_by is `EX-0001-003`, which is retired at rfcs/0001-greetings/rfc.toml:5
 error[registry] registry/identifiers.toml:67: the entry at line 3 holds the same identifies and format
 error[registry] registry/identifiers.toml:76: code is an integer, which isn't a text
 error[registry] registry/identifiers.toml:77: identifies is `a month`, which isn't a kind table's name
