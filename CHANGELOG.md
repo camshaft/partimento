@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4](https://github.com/camshaft/partimento/compare/v0.7.3...v0.7.4) - 2026-11-18
+
+### Added
+
+- check that no two section files of an RFC begin with the same number ([#113](https://github.com/camshaft/partimento/pull/113))
+
+### Other
+
+- the relation-target and registry findings cite a retired identifier's first listing ([#110](https://github.com/camshaft/partimento/pull/110))
+- an identifier retired in two files is kept at its first listing ([#108](https://github.com/camshaft/partimento/pull/108))
+- a section file's retired identifier in the registry and relation-target messages ([#109](https://github.com/camshaft/partimento/pull/109))
+
 ## [0.7.3](https://github.com/camshaft/partimento/compare/v0.7.2...v0.7.3) - 2026-11-18
 
 ### Added
