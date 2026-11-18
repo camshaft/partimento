@@ -94,6 +94,24 @@ statement = "The program MUST print a farewell when it stops."
 relations = [{ kind = "supersedes", target = "EX-0001-008" }]
 "#;
 
+/// A section file whose requirement implies `EX-0001-008`, which `RETIRING` retires, in its
+/// relations at line 14.
+const IMPLYING: &str = r#"[section]
+anchor = "implying"
+title = "Implying"
+problem = "A person who stops the program doesn't know that it stopped."
+motivation = "A farewell tells the person that the program stopped."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a farewell when it stops."
+relations = [{ kind = "implies", target = "EX-0001-008" }]
+"#;
+
 /// spec.toml's first two lines, which each case of `RANGE_CASES` follows.
 const TOP: &str = "prefix = 'EX'\nlevels = ['MUST']";
 
@@ -260,6 +278,27 @@ fn a_supersedes_relation_targets_an_identifier_a_section_file_retires() {
     tree.files.extend(generated.files);
     let report = partimento::check_default(&tree, &Options::default());
     assert!(report.findings.is_empty(), "{}", lines(&report));
+}
+
+#[test]
+fn an_implies_relation_to_an_identifier_a_section_file_retires_says_where_it_is_retired() {
+    let (retiring, implying) = (
+        "rfcs/0001-greetings/02-retiring.toml",
+        "rfcs/0001-greetings/03-implying.toml",
+    );
+    let mut files = CLEAN.to_vec();
+    files.extend([(retiring, RETIRING), (implying, IMPLYING)]);
+    let report = check(&files);
+    assert!(report.failed());
+    let target = partimento::checks::RELATION_TARGET;
+    let found: Vec<&Finding> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.rule == target)
+        .collect();
+    let message = format!("the relation's target `EX-0001-008` is retired at {retiring}:1");
+    let expected = Finding::error(target, implying, 14, Some("EX-0001-002"), message);
+    assert_eq!(found, [&expected]);
 }
 
 #[cfg(feature = "cli")]
