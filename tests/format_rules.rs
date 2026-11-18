@@ -1,12 +1,12 @@
 //! Tests of the format rules and of the command's output that the fixtures of tests/fixtures.rs
 //! don't reach: the form and the retirement of identifiers, the type and the presence of fields,
-//! the checks of spec.toml, the JSON output's `null` and empty array, and a file the command
-//! can't read.
+//! the checks of spec.toml, a section file's own sources and retired identifiers, the JSON
+//! output's `null` and empty array, and a file the command can't read.
 //!
 //! The library's tests build each tree in memory from files embedded at compile time, so they
 //! read no file and run on wasm32 too.
 
-use partimento::{ByteVec, Options, Report, Tree};
+use partimento::{ByteVec, Finding, Options, Report, Tree};
 
 const SPEC: &str = include_str!("fixtures/format-rules/spec.toml");
 const INDEX: &str = include_str!("fixtures/format-rules/rfcs/index.toml");
@@ -38,6 +38,61 @@ const CLEAN: &[(&str, &str)] = &[
     ("rfcs/0001-greetings/rfc.toml", CLEAN_META),
     ("rfcs/0001-greetings/01-greeting.toml", GREETING),
 ];
+
+/// A section file that retires `EX-0001-008` and `EX-0002-001`, an identifier of RFC 2, on line
+/// 1, and lists its own source, before its `[section]` table.
+const RETIRING: &str = r#"retired = ["EX-0001-008", "EX-0002-001"]
+
+[[sources]]
+design = "designs/greetings"
+version = 2
+
+[section]
+anchor = "retiring"
+title = "Retiring"
+problem = "A greeting the program no longer prints is still written down."
+motivation = "A retired identifier keeps a reader from using it again."
+"#;
+
+/// A section file whose requirement holds `EX-0001-008`, which `RETIRING` retires, at line 10.
+const REUSING: &str = r#"[section]
+anchor = "reusing"
+title = "Reusing"
+problem = "A person who stops the program doesn't know that it stopped."
+motivation = "A farewell tells the person that the program stopped."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The tests need this requirement."
+id = "EX-0001-008"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a farewell when it stops."
+"#;
+
+/// A section file that retires `EX-0001-008` and lists its own source before its `[section]`
+/// table, and whose requirement supersedes `EX-0001-008`.
+const SUPERSEDING: &str = r#"retired = ["EX-0001-008"]
+
+[[sources]]
+design = "designs/greetings"
+version = 2
+
+[section]
+anchor = "farewell"
+title = "Farewell"
+problem = "A person who stops the program doesn't know that it stopped."
+motivation = "A farewell tells the person that the program stopped."
+
+[[requirement]]
+binds_to = "system"
+rationale = "The farewell takes the place of the retired one."
+id = "EX-0001-002"
+level = "MUST"
+polarity = "required"
+statement = "The program MUST print a farewell when it stops."
+relations = [{ kind = "supersedes", target = "EX-0001-008" }]
+"#;
 
 /// spec.toml's first two lines, which each case of `RANGE_CASES` follows.
 const TOP: &str = "prefix = 'EX'\nlevels = ['MUST']";
@@ -169,6 +224,42 @@ fn a_tree_that_breaks_no_rule_has_no_finding() {
     let report = partimento::check_default(&clean(), &Options::default());
     assert!(report.findings.is_empty(), "{}", lines(&report));
     assert!(!report.failed());
+}
+
+#[test]
+fn an_identifier_a_section_file_retires_is_refused_in_another_section_file() {
+    let (retiring, reusing) = (
+        "rfcs/0001-greetings/02-retiring.toml",
+        "rfcs/0001-greetings/03-reusing.toml",
+    );
+    let mut files = CLEAN.to_vec();
+    files.extend([(retiring, RETIRING), (reusing, REUSING)]);
+    let report = check(&files);
+    assert!(report.failed());
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    let found: Vec<&Finding> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.rule == retired)
+        .collect();
+    let other_rfc = "RFC 1 retires an identifier of RFC 2";
+    let reused = format!("the identifier is retired at {retiring}:1");
+    let expected = [
+        Finding::error(retired, retiring, 1, Some("EX-0002-001"), other_rfc),
+        Finding::error(retired, reusing, 10, Some("EX-0001-008"), reused),
+    ];
+    assert_eq!(found, expected.iter().collect::<Vec<_>>());
+}
+
+#[test]
+fn a_supersedes_relation_targets_an_identifier_a_section_file_retires() {
+    let mut files = CLEAN.to_vec();
+    files.push(("rfcs/0001-greetings/02-farewell.toml", SUPERSEDING));
+    let mut tree = tree(&files);
+    let generated = partimento::render(&tree).expect("the tree renders");
+    tree.files.extend(generated.files);
+    let report = partimento::check_default(&tree, &Options::default());
+    assert!(report.findings.is_empty(), "{}", lines(&report));
 }
 
 #[cfg(feature = "cli")]

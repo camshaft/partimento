@@ -129,13 +129,10 @@ pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
         held: Places::new(),
     };
     for rfc in &set.rfcs {
-        let Some(meta) = &rfc.meta else {
-            continue;
-        };
-        for id in &meta.retired {
+        for (file, id) in rfc.retired() {
             let mut place = Place {
                 findings,
-                file: rfc.meta_file.as_str(),
+                file,
                 requirement: Some(id.value.as_str()),
             };
             match parse_identifier(&config.prefix, &id.value) {
@@ -147,8 +144,7 @@ pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
                 }
                 Some(_) => {}
             }
-            let at = (rfc.meta_file.as_str(), id.line);
-            cx.retired.entry(id.value.as_str()).or_insert(at);
+            cx.retired.entry(id.value.as_str()).or_insert((file, id.line));
         }
     }
     for rfc in &set.rfcs {
@@ -291,9 +287,7 @@ fn check_groups(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
     let mut retired = BTreeSet::new();
     for rfc in &set.rfcs {
         held.entry(rfc.number).or_insert(rfc);
-        if let Some(meta) = &rfc.meta {
-            retired.extend(meta.retired.iter().map(|id| id.value.as_str()));
-        }
+        retired.extend(rfc.retired().map(|(_, id)| id.value.as_str()));
     }
     for rfc in &set.rfcs {
         for section in &rfc.sections {

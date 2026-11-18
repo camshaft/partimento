@@ -159,6 +159,27 @@ rationale = "A person who reads the error stream reads only the errors."
 A section needs `anchor`, `title`, `problem` and `motivation`, and may hold `prose`. The anchor
 holds ASCII letters, digits, `-` and `_`, and the title is one line.
 
+A section file may also list its own sources and retired identifiers, so that changes of two
+sections of one RFC don't both edit `rfc.toml`. Its `retired` list goes before the file's first
+table, since TOML reads a key after a table's header as a key of that table, and each of its
+`[[sources]]` tables has the form of those of `rfc.toml`:
+
+```toml
+retired = ["EX-0001-003"]
+
+[[sources]]
+design = "designs/greetings"
+version = 2
+
+[section]
+anchor = "greeting"
+```
+
+An RFC's sources are those of its `rfc.toml` and then those of each section file, in the order of
+the section files' names, and its retired identifiers are those that any of these files lists. A
+finding about a retired identifier states the file and the line that list it. A section file
+holds only these top-level keys: `section`, `requirement`, `kind`, `sources` and `retired`.
+
 A section that specifies a kind of self-describing identifier names it in a `[[kind]]` table
 beside its requirements:
 

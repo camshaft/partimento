@@ -124,6 +124,27 @@ impl Rfc {
             sections: Vec::new(),
         }
     }
+
+    /// The RFC's sources: those its rfc.toml lists, where it parses, and then those each section
+    /// file lists, in the order of the sections.
+    pub fn sources(&self) -> impl Iterator<Item = &Source> {
+        let meta = self.meta.iter().flat_map(|meta| &meta.sources);
+        meta.chain(self.sections.iter().flat_map(|section| &section.sources))
+    }
+
+    /// The identifiers the RFC retires, each with the path of the file that lists it: those its
+    /// rfc.toml lists, where it parses, and then those each section file lists, in the order of
+    /// the sections. An identifier that two of these files list comes once for each.
+    pub fn retired(&self) -> impl Iterator<Item = (&str, &Located<String>)> {
+        let file = self.meta_file.as_str();
+        let meta = self.meta.iter().flat_map(|meta| &meta.retired);
+        let meta = meta.map(move |id| (file, id));
+        let sections = self.sections.iter().flat_map(|section| {
+            let file = section.file.as_str();
+            section.retired.iter().map(move |id| (file, id))
+        });
+        meta.chain(sections)
+    }
 }
 
 /// A value and the line of the file that holds it.
@@ -166,8 +187,10 @@ pub struct Meta {
     pub area_line: u32,
     /// The RFC's abstract.
     pub summary: String,
+    /// The sources rfc.toml lists; [`Rfc::sources`] reads them with each section file's.
     pub sources: Vec<Source>,
-    /// The identifiers the RFC no longer holds, which no requirement uses again.
+    /// The identifiers rfc.toml lists as ones the RFC no longer holds, which no requirement uses
+    /// again; [`Rfc::retired`] reads them with each section file's.
     pub retired: Vec<Located<String>>,
     /// The version of the contract that a contract's RFC states, where its rfc.toml holds
     /// `contract_version`.
@@ -209,6 +232,8 @@ pub struct Source {
 ///     fields: Vec::new(),
 ///     requirements: Vec::new(),
 ///     kinds: Vec::new(),
+///     sources: Vec::new(),
+///     retired: Vec::new(),
 /// };
 /// ```
 #[derive(Clone, Debug, PartialEq)]
@@ -226,6 +251,12 @@ pub struct Section {
     /// identifier that the section specifies, by its `name`, and the number of each form of that
     /// kind's identifier, in its `formats`. `registry::check` checks their fields.
     pub kinds: Vec<Block>,
+    /// The sources the file lists in its own `[[sources]]` tables, in the order of the file, each
+    /// of the form of rfc.toml's; [`Rfc::sources`] reads them after rfc.toml's.
+    pub sources: Vec<Source>,
+    /// The identifiers the file's own `retired` list holds, each with its line, in the order of
+    /// the file; [`Rfc::retired`] reads them after rfc.toml's.
+    pub retired: Vec<Located<String>>,
 }
 
 /// One `[[requirement]]` block of a section file, or one of its `[[kind]]` tables.
@@ -266,8 +297,8 @@ impl Field {
 
 impl Section {
     /// The section file at `file` whose `[section]` table is at line `line`, 1 where the file
-    /// doesn't hold one, before its tables are read: it doesn't hold a field, a requirement or a
-    /// kind table yet.
+    /// doesn't hold one, before its tables are read: it doesn't hold a field, a requirement, a kind
+    /// table, a source or a retired identifier yet.
     pub fn new(file: String, line: u32) -> Self {
         Self {
             file,
@@ -275,6 +306,8 @@ impl Section {
             fields: Vec::new(),
             requirements: Vec::new(),
             kinds: Vec::new(),
+            sources: Vec::new(),
+            retired: Vec::new(),
         }
     }
 
@@ -311,6 +344,10 @@ struct RawSection {
     requirement: Vec<Spanned<RawTable>>,
     #[serde(default)]
     kind: Vec<Spanned<RawTable>>,
+    #[serde(default)]
+    sources: Vec<Source>,
+    #[serde(default)]
+    retired: Vec<Spanned<String>>,
 }
 
 #[derive(Deserialize)]
@@ -508,14 +545,7 @@ fn load_meta(
         let message = format!("rfc.toml holds number {held}, and its directory is RFC {number}");
         findings.push(Finding::error(LAYOUT, file, at, None, message));
     }
-    let retired = raw
-        .retired
-        .into_iter()
-        .map(|id| Located {
-            line: line(id.span()),
-            value: id.into_inner(),
-        })
-        .collect();
+    let retired = located(raw.retired, &lines);
     let contract_version = raw.contract_version.map(|version| Located {
         line: line(version.span()),
         value: version.into_inner(),
@@ -594,6 +624,8 @@ pub(crate) fn load_section(
         fields,
         requirements: blocks(raw.requirement),
         kinds: blocks(raw.kind),
+        sources: raw.sources,
+        retired: located(raw.retired, &lines),
     })
 }
 
@@ -610,9 +642,21 @@ fn read_fields(table: RawTable, lines: &source::Lines) -> Vec<Field> {
     fields
 }
 
+/// Each identifier of a `retired` list, with the line that holds it.
+fn located(ids: Vec<Spanned<String>>, lines: &source::Lines) -> Vec<Located<String>> {
+    let one = |id: Spanned<String>| Located {
+        line: lines.line(id.span().start),
+        value: id.into_inner(),
+    };
+    ids.into_iter().map(one).collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{load, load_index, Field, Located, Rfc, Section, Set, State, INDEX_STATE, LAYOUT};
+    use super::{
+        load, load_index, load_section, Field, Located, Rfc, Section, Set, Source, State,
+        INDEX_STATE, LAYOUT,
+    };
     use crate::{config, ByteVec, Finding, Tree};
 
     /// The configuration of the tests' set.
@@ -660,6 +704,11 @@ id = "EX-0001-002"
             ("rfcs/0001-greetings/rfc.toml", META),
             ("rfcs/0001-greetings/01-greeting.toml", SECTION),
         ];
+        load_files(&files, findings)
+    }
+
+    /// The set that `files`, each a path and its text, hold, with the findings of their reads.
+    fn load_files(files: &[(&str, &str)], findings: &mut Vec<Finding>) -> Set {
         let mut tree = Tree::default();
         for (path, text) in files {
             let bytes = ByteVec::from(text.to_string());
@@ -752,6 +801,8 @@ state = "planned"
         assert!(section.fields.is_empty());
         assert!(section.requirements.is_empty());
         assert!(section.kinds.is_empty());
+        assert!(section.sources.is_empty());
+        assert!(section.retired.is_empty());
     }
 
     #[test]
@@ -760,5 +811,140 @@ state = "planned"
         assert_eq!(field.key, "title");
         assert_eq!(field.line, 2);
         assert_eq!(field.value, toml::Value::Boolean(true));
+    }
+
+    /// The commit of the earlier file that `FIRST_LISTING` lists as its source.
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    /// An rfc.toml of RFC 1 that retires `EX-0001-005` on line 4 and lists a design as its source.
+    const LISTING_META: &str = r#"number = 1
+title = "Greetings"
+area = "core"
+retired = ["EX-0001-005"]
+abstract = "How to greet."
+
+[[sources]]
+design = "designs/greetings"
+version = 3
+"#;
+
+    /// A section file whose `retired` list, on line 1, holds `EX-0001-006`, and which lists an
+    /// earlier file as its source on lines 3 to 5, before its `[section]` table on line 7.
+    const FIRST_LISTING: &str = r#"retired = ["EX-0001-006"]
+
+[[sources]]
+path = "drafts/greetings.md"
+commit = "0123456789abcdef0123456789abcdef01234567"
+
+[section]
+anchor = "greeting"
+title = "Greeting"
+"#;
+
+    /// A section file whose `retired` list holds `EX-0001-007` on line 2, and which lists a
+    /// design as its source after its `[section]` table.
+    const SECOND_LISTING: &str = r#"retired = [
+    "EX-0001-007",
+]
+
+[section]
+anchor = "farewell"
+title = "Farewell"
+
+[[sources]]
+design = "designs/farewells"
+version = 1
+"#;
+
+    /// The files of a set whose rfc.toml and two section files each list one source and retire
+    /// one identifier.
+    fn listing_files() -> [(&'static str, &'static str); 5] {
+        [
+            ("spec.toml", SPEC),
+            ("rfcs/index.toml", ""),
+            ("rfcs/0001-greetings/rfc.toml", LISTING_META),
+            ("rfcs/0001-greetings/01-greeting.toml", FIRST_LISTING),
+            ("rfcs/0001-greetings/02-farewell.toml", SECOND_LISTING),
+        ]
+    }
+
+    /// The source of a design at a version.
+    fn design(design: &str, version: u32) -> Source {
+        Source {
+            design: Some(design.to_owned()),
+            version: Some(version),
+            path: None,
+            commit: None,
+        }
+    }
+
+    /// The source that `FIRST_LISTING` lists: an earlier file at a commit.
+    fn draft() -> Source {
+        Source {
+            design: None,
+            version: None,
+            path: Some("drafts/greetings.md".to_owned()),
+            commit: Some(COMMIT.to_owned()),
+        }
+    }
+
+    /// The identifier `value` that a `retired` list holds on line `line`.
+    fn retired(line: u32, value: &str) -> Located<String> {
+        Located {
+            line,
+            value: value.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_section_file_holds_its_own_sources_and_retired_identifiers_with_their_lines() {
+        let mut findings = Vec::new();
+        let set = load_files(&listing_files(), &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        let sections = &set.rfcs[0].sections;
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].line, 7);
+        assert_eq!(keys(&sections[0].fields), [("anchor", 8), ("title", 9)]);
+        assert_eq!(sections[0].sources, [draft()]);
+        assert_eq!(sections[0].retired, [retired(1, "EX-0001-006")]);
+        assert_eq!(sections[1].sources, [design("designs/farewells", 1)]);
+        assert_eq!(sections[1].retired, [retired(2, "EX-0001-007")]);
+    }
+
+    #[test]
+    fn an_rfc_reads_its_rfc_toml_and_then_each_section_file_in_order() {
+        let set = load_files(&listing_files(), &mut Vec::new());
+        let rfc = &set.rfcs[0];
+        let sources: Vec<&Source> = rfc.sources().collect();
+        let expected = [
+            design("designs/greetings", 3),
+            draft(),
+            design("designs/farewells", 1),
+        ];
+        assert_eq!(sources, expected.iter().collect::<Vec<_>>());
+        let retired: Vec<(&str, u32, &str)> = rfc
+            .retired()
+            .map(|(file, id)| (file, id.line, id.value.as_str()))
+            .collect();
+        let expected = [
+            ("rfcs/0001-greetings/rfc.toml", 4, "EX-0001-005"),
+            ("rfcs/0001-greetings/01-greeting.toml", 1, "EX-0001-006"),
+            ("rfcs/0001-greetings/02-farewell.toml", 2, "EX-0001-007"),
+        ];
+        assert_eq!(retired, expected);
+    }
+
+    #[test]
+    fn a_section_file_with_another_top_level_key_doesnt_load() {
+        let text = "summary = \"Greeting\"\nretired = []\n\n[section]\nanchor = \"greeting\"\n";
+        let file = "rfcs/0001-greetings/01-greeting.toml";
+        let mut findings = Vec::new();
+        let section = load_section(file, &ByteVec::from(text.to_owned()), &mut findings);
+        assert_eq!(section, None);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].rule, crate::source::RULE);
+        assert_eq!((findings[0].file.as_str(), findings[0].line), (file, 1));
+        let message = &findings[0].message;
+        assert!(message.contains("unknown field `summary`"), "{message}");
     }
 }

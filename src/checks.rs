@@ -195,11 +195,8 @@ impl<'a> Context<'a> {
             }
         }
         for rfc in &set.rfcs {
-            if let Some(meta) = &rfc.meta {
-                for id in &meta.retired {
-                    let at = (rfc.meta_file.as_str(), id.line);
-                    cx.retired.entry(id.value.as_str()).or_insert(at);
-                }
+            for (file, id) in rfc.retired() {
+                cx.retired.entry(id.value.as_str()).or_insert((file, id.line));
             }
             for section in &rfc.sections {
                 for block in &section.requirements {

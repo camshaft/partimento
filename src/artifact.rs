@@ -26,7 +26,7 @@ use toml::Value;
 
 use crate::checks::Consistency;
 use crate::logic::{Formula, FormulaSet};
-use crate::model::{load_section, Block, Field, Section};
+use crate::model::{load_section, Block, Field, Located, Section, Source};
 use crate::render::{Generated, Paths, Section as Rendered};
 use crate::{ByteVec, Finding, Key, Severity};
 
@@ -503,6 +503,34 @@ impl Writer {
         self.fields(&section.fields);
         self.blocks(&section.requirements);
         self.blocks(&section.kinds);
+        self.count(section.sources.len());
+        for source in &section.sources {
+            self.source(source);
+        }
+        self.count(section.retired.len());
+        for id in &section.retired {
+            self.u32(id.line);
+            self.text(&id.value);
+        }
+    }
+
+    /// A source: each of its four parts after a boolean of whether the source holds it.
+    fn source(&mut self, source: &Source) {
+        self.optional_text(source.design.as_deref());
+        self.boolean(source.version.is_some());
+        if let Some(version) = source.version {
+            self.u32(version);
+        }
+        self.optional_text(source.path.as_deref());
+        self.optional_text(source.commit.as_deref());
+    }
+
+    /// A boolean of whether `text` is there, and then the text where it is.
+    fn optional_text(&mut self, text: Option<&str>) {
+        self.boolean(text.is_some());
+        if let Some(text) = text {
+            self.text(text);
+        }
     }
 
     fn blocks(&mut self, blocks: &[Block]) {
@@ -662,7 +690,40 @@ impl<'a> Reader<'a> {
         section.fields = self.fields()?;
         section.requirements = self.list(Self::block)?;
         section.kinds = self.list(Self::block)?;
+        section.sources = self.list(Self::source)?;
+        section.retired = self.list(Self::located)?;
         Some(section)
+    }
+
+    fn source(&mut self) -> Option<Source> {
+        let design = self.optional_text()?;
+        let version = if self.boolean()? {
+            Some(self.u32()?)
+        } else {
+            None
+        };
+        let path = self.optional_text()?;
+        let commit = self.optional_text()?;
+        Some(Source {
+            design,
+            version,
+            path,
+            commit,
+        })
+    }
+
+    fn optional_text(&mut self) -> Option<Option<String>> {
+        if self.boolean()? {
+            Some(Some(self.text()?))
+        } else {
+            Some(None)
+        }
+    }
+
+    fn located(&mut self) -> Option<Located<String>> {
+        let line = self.u32()?;
+        let value = self.text()?;
+        Some(Located { line, value })
     }
 
     fn block(&mut self) -> Option<Block> {
@@ -752,6 +813,30 @@ table = { key = "value", nested = { list = [] } }
             line: 60,
             fields: fields(61),
         }];
+        section.sources = vec![
+            Source {
+                design: Some("designs/greetings".to_string()),
+                version: Some(2),
+                path: None,
+                commit: None,
+            },
+            Source {
+                design: None,
+                version: None,
+                path: Some("drafts/greetings.md".to_string()),
+                commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            },
+        ];
+        section.retired = vec![
+            Located {
+                line: 80,
+                value: "EX-0001-003".to_string(),
+            },
+            Located {
+                line: 81,
+                value: "EX-0001-004".to_string(),
+            },
+        ];
         section
     }
 
