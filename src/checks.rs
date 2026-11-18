@@ -196,7 +196,9 @@ impl<'a> Context<'a> {
         }
         for rfc in &set.rfcs {
             for (file, id) in rfc.retired() {
-                cx.retired.entry(id.value.as_str()).or_insert((file, id.line));
+                cx.retired
+                    .entry(id.value.as_str())
+                    .or_insert((file, id.line));
             }
             for section in &rfc.sections {
                 for block in &section.requirements {

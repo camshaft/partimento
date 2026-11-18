@@ -677,6 +677,23 @@ fn the_list_of_a_retired_identifier_isnt_read() {
 }
 
 #[test]
+fn the_list_of_an_identifier_a_section_file_retires_isnt_read() {
+    let listed = "retired = [\"EX-0100-001\"]\n\n[section]";
+    let retire = (ANSWER, "[section]", listed);
+    let list = (ANSWER, GROUP, "same_contract_version = [101, 102]\n");
+    let tree = shared_with(&[RAISE_101, retire, list]);
+    let found = shared_findings(&tree);
+    assert!(found.is_empty(), "{found}");
+    let report = partimento::check_default(&tree, &Options::default());
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    assert!(
+        report.findings.iter().any(|f| f.rule == retired),
+        "{}",
+        lines(&report)
+    );
+}
+
+#[test]
 fn a_list_written_on_a_requirement_changes_it_in_a_diff() {
     let base = shared_with(&[RAISE_101, (ANSWER, GROUP, "")]);
     let head = shared_with(&[

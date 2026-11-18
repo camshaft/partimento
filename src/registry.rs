@@ -555,7 +555,9 @@ fn defined_by_problem(value: &Value, ids: &Identifiers) -> Option<String> {
         ));
     };
     if let Some((file, line)) = ids.retired.get(id) {
-        Some(format!("defined_by is `{id}`, which is retired at {file}:{line}"))
+        Some(format!(
+            "defined_by is `{id}`, which is retired at {file}:{line}"
+        ))
     } else if !ids.held.contains(id) {
         Some(format!(
             "defined_by is `{id}`, which no requirement of a written RFC holds"

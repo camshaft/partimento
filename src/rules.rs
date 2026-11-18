@@ -144,7 +144,9 @@ pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
                 }
                 Some(_) => {}
             }
-            cx.retired.entry(id.value.as_str()).or_insert((file, id.line));
+            cx.retired
+                .entry(id.value.as_str())
+                .or_insert((file, id.line));
         }
     }
     for rfc in &set.rfcs {
