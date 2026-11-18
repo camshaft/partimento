@@ -441,12 +441,14 @@ pub(crate) fn load_cached<C: Cache>(
         };
         let mut rfc = Rfc::new(path, number);
         let mut has_meta = false;
+        let mut names: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for (name, bytes) in files {
             let file = format!("{}/{name}", rfc.dir);
             if name == RFC {
                 has_meta = true;
                 rfc.meta = load_meta(&file, bytes, number, findings);
-            } else if is_section_name(name) {
+            } else if let Some(digits) = section_number(name) {
+                names.entry(digits).or_default().push(name);
                 let section = cached_section(&file, bytes, cache, findings);
                 rfc.sections.extend(section);
             } else {
@@ -458,6 +460,7 @@ pub(crate) fn load_cached<C: Cache>(
             let message = "the RFC's directory doesn't hold its rfc.toml";
             findings.push(Finding::error(LAYOUT, &rfc.meta_file, 1, None, message));
         }
+        repeated_numbers(&rfc.dir, &names, findings);
         set.rfcs.push(rfc);
     }
     set
@@ -509,15 +512,47 @@ fn rfc_number(dir: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
-/// Whether a file's name is `<nn>-<slug>.toml`.
-fn is_section_name(name: &str) -> bool {
-    let Some(stem) = name.strip_suffix(".toml") else {
-        return false;
-    };
-    let Some((digits, slug)) = stem.split_once('-') else {
-        return false;
-    };
-    digits.len() == 2 && all_digits(digits) && is_slug(slug)
+/// The two digits that begin a file's name, where the name is `<nn>-<slug>.toml`.
+fn section_number(name: &str) -> Option<&str> {
+    let stem = name.strip_suffix(".toml")?;
+    let (digits, slug) = stem.split_once('-')?;
+    let named = digits.len() == 2 && all_digits(digits) && is_slug(slug);
+    named.then_some(digits)
+}
+
+/// Adds a finding for each number that more than one section file of the RFC directory `dir`
+/// begins with, at the second of those files in the order of their names, naming each of them:
+/// the numbers put an RFC's sections in one order, and a repeated number leaves a tie. `names`
+/// holds the names of the directory's section files by the number each begins with, read from
+/// the directory's listing alone, so a file that doesn't parse counts too.
+fn repeated_numbers(dir: &str, names: &BTreeMap<&str, Vec<&str>>, findings: &mut Vec<Finding>) {
+    for (digits, files) in names {
+        let [_, second, ..] = files.as_slice() else {
+            continue;
+        };
+        let file = format!("{dir}/{second}");
+        let message = format!(
+            "the section files {} begin with the same number, {digits}",
+            listed(files)
+        );
+        findings.push(Finding::error(LAYOUT, &file, 1, None, message));
+    }
+}
+
+/// Each of `names` in backticks, as a list: `a` and `b`, or `a`, `b` and `c`.
+fn listed(names: &[&str]) -> String {
+    let mut text = String::new();
+    for (index, name) in names.iter().enumerate() {
+        if index > 0 && index + 1 == names.len() {
+            text.push_str(" and ");
+        } else if index > 0 {
+            text.push_str(", ");
+        }
+        text.push('`');
+        text.push_str(name);
+        text.push('`');
+    }
+    text
 }
 
 fn all_digits(text: &str) -> bool {
@@ -946,5 +981,50 @@ version = 1
         assert_eq!((findings[0].file.as_str(), findings[0].line), (file, 1));
         let message = &findings[0].message;
         assert!(message.contains("unknown field `summary`"), "{message}");
+    }
+
+    /// The path of the section file of [`repeated_number_files`] that doesn't parse.
+    const UNPARSED: &str = "rfcs/0001-greetings/03-gamma.toml";
+
+    /// The files of a set whose RFC 1 holds two section files that begin with 01, one that begins
+    /// with 02 and three that begin with 03, the last of which, at [`UNPARSED`], doesn't parse,
+    /// and whose RFC 2 holds a section file that begins with 01 too.
+    fn repeated_number_files() -> [(&'static str, &'static str); 11] {
+        [
+            ("spec.toml", SPEC),
+            ("rfcs/index.toml", ""),
+            ("rfcs/0001-greetings/rfc.toml", LISTING_META),
+            ("rfcs/0001-greetings/01-greeting.toml", SECTION),
+            ("rfcs/0001-greetings/01-welcome.toml", SECTION),
+            ("rfcs/0001-greetings/02-farewell.toml", SECTION),
+            ("rfcs/0001-greetings/03-alpha.toml", SECTION),
+            ("rfcs/0001-greetings/03-beta.toml", SECTION),
+            (UNPARSED, "[section\n"),
+            ("rfcs/0002-farewells/rfc.toml", META),
+            ("rfcs/0002-farewells/01-farewell.toml", SECTION),
+        ]
+    }
+
+    #[test]
+    fn each_number_two_section_files_of_an_rfc_begin_with_is_a_finding_at_the_second() {
+        let mut findings = Vec::new();
+        let set = load_files(&repeated_number_files(), &mut findings);
+        // The file that doesn't parse has its own finding, and its number counts all the same.
+        assert_eq!(findings.len(), 3, "{findings:?}");
+        assert_eq!(findings[0].rule, crate::source::RULE);
+        assert_eq!(findings[0].file, UNPARSED);
+        let pair = "the section files `01-greeting.toml` and `01-welcome.toml` begin with the same \
+                    number, 01";
+        let three = "the section files `03-alpha.toml`, `03-beta.toml` and `03-gamma.toml` begin \
+                     with the same number, 03";
+        let expected = [
+            Finding::error(LAYOUT, "rfcs/0001-greetings/01-welcome.toml", 1, None, pair),
+            Finding::error(LAYOUT, "rfcs/0001-greetings/03-beta.toml", 1, None, three),
+        ];
+        assert_eq!(findings[1..], expected);
+        // Each section file that parses still loads, and RFC 2's file that begins with 01 isn't
+        // counted with RFC 1's.
+        let counts: Vec<usize> = set.rfcs.iter().map(|rfc| rfc.sections.len()).collect();
+        assert_eq!(counts, [5, 1]);
     }
 }

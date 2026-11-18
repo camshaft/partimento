@@ -156,6 +156,10 @@ statement = "The program MUST NOT print the greeting to the error stream."
 rationale = "A person who reads the error stream reads only the errors."
 ```
 
+The numbers put an RFC's sections in order, so no two section files of one RFC begin with the same
+number: the check reports each number that more than one of them begins with, at the second of
+those files.
+
 A section needs `anchor`, `title`, `problem` and `motivation`, and may hold `prose`. The anchor
 holds ASCII letters, digits, `-` and `_`, and the title is one line.
 
