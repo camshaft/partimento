@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2](https://github.com/camshaft/partimento/compare/v0.7.1...v0.7.2) - 2026-11-18
+
+### Other
+
+- check of a registry that isn't UTF-8 reports the read alone ([#106](https://github.com/camshaft/partimento/pull/106))
+- make the solves of a wide conjunction linear in its parts ([#98](https://github.com/camshaft/partimento/pull/98))
+
 ## [0.7.1](https://github.com/camshaft/partimento/compare/v0.7.0...v0.7.1) - 2026-11-18
 
 ### Added
