@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/camshaft/partimento/compare/v0.7.2...v0.7.3) - 2026-11-18
+
+### Added
+
+- a section file may list sources and retired identifiers ([#107](https://github.com/camshaft/partimento/pull/107))
+
 ## [0.7.2](https://github.com/camshaft/partimento/compare/v0.7.1...v0.7.2) - 2026-11-18
 
 ### Other
