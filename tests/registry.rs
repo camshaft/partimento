@@ -2,9 +2,9 @@
 //! `paths.registry` and whose section file names the kind `a greeting`, with formats 1 and 2, in
 //! a kind table: the check of the fixture with its registry, with a registry of comment lines
 //! alone, without the file, with a registry whose entries each break one rule, with a registry
-//! that doesn't parse, and without `paths.registry`; the checks of `paths.registry` in spec.toml;
-//! and the diff of a change that removes or alters an entry, of one that only adds, and of a head
-//! whose registry isn't UTF-8 or doesn't parse.
+//! that doesn't parse, with one that isn't UTF-8, and without `paths.registry`; the checks of
+//! `paths.registry` in spec.toml; and the diff of a change that removes or alters an entry, of
+//! one that only adds, and of a head whose registry isn't UTF-8 or doesn't parse.
 //!
 //! The library's tests build each tree in memory from files embedded at compile time, so they
 //! read no file and run on wasm32 too.
@@ -202,6 +202,23 @@ fn a_registry_that_doesnt_parse_fails_at_its_line() {
         assert_eq!(finding.line, 2, "{text:?}");
         assert!(report.failed(), "{text:?}");
     }
+}
+
+#[test]
+fn a_registry_that_isnt_utf8_fails_at_the_line_of_its_first_bad_byte() {
+    // A byte that isn't UTF-8 on line 2: the check reports that read alone, and not the formats
+    // of the kind table, since it doesn't know which entries the file holds.
+    let mut tree = fixture();
+    let bytes = ByteVec::from(b"# A registry.\nentry = \xff\n".to_vec());
+    tree.files.insert(REGISTRY.to_string(), bytes);
+    let report = check(&tree);
+    assert_eq!(report.findings.len(), 1, "{}", lines(&report.findings));
+    let finding = &report.findings[0];
+    assert_eq!(finding.rule, "parse");
+    assert_eq!(finding.file, REGISTRY);
+    assert_eq!(finding.line, 2);
+    assert_eq!(finding.message, "the file isn't UTF-8 text");
+    assert!(report.failed());
 }
 
 #[test]
