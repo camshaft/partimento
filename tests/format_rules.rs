@@ -251,6 +251,65 @@ fn an_identifier_a_section_file_retires_is_refused_in_another_section_file() {
     assert_eq!(found, expected.iter().collect::<Vec<_>>());
 }
 
+/// An rfc.toml that retires `EX-0001-008` at line 5.
+const RETIRING_META: &str = r#"number = 1
+title = "Greetings"
+area = "core"
+abstract = "How the program greets a person when it starts and when it stops."
+retired = ["EX-0001-008"]
+"#;
+
+/// A section file that retires `EX-0001-008` on line 1, as `RETIRING` does.
+const RETIRING_AGAIN: &str = r#"retired = ["EX-0001-008"]
+
+[section]
+anchor = "retiring-again"
+title = "Retiring again"
+problem = "A greeting the program no longer prints is written down in two files."
+motivation = "A retired identifier keeps a reader from using it again."
+"#;
+
+/// The findings of the rule identifier-retired about `EX-0001-008` in `CLEAN` with `files`, in
+/// which a later text of a path takes the place of an earlier one.
+fn retired_008(files: &[(&'static str, &'static str)]) -> Vec<Finding> {
+    let mut all = CLEAN.to_vec();
+    all.extend_from_slice(files);
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    check(&all)
+        .findings
+        .into_iter()
+        .filter(|finding| finding.rule == retired)
+        .filter(|finding| finding.requirement.as_deref() == Some("EX-0001-008"))
+        .collect()
+}
+
+#[test]
+fn an_identifier_retired_in_two_files_is_kept_at_its_first_listing() {
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    let reuse = |file: &str, at: &str, line: u32| {
+        let message = format!("the identifier is retired at {at}:{line}");
+        Finding::error(retired, file, 10, Some("EX-0001-008"), message)
+    };
+    let (meta, first) = (CLEAN[2].0, "rfcs/0001-greetings/02-retiring.toml");
+    // rfc.toml retires the identifier at line 5 and a section file retires it at line 1, and a
+    // third file reuses it at line 10: the finding names rfc.toml's line.
+    let reusing = "rfcs/0001-greetings/03-reusing.toml";
+    let files = [(meta, RETIRING_META), (first, RETIRING), (reusing, REUSING)];
+    assert_eq!(retired_008(&files), [reuse(reusing, meta, 5)]);
+    // Two section files retire the identifier, each at line 1, and a third reuses it: the
+    // finding names the first file's line.
+    let (again, reusing) = (
+        "rfcs/0001-greetings/03-retiring-again.toml",
+        "rfcs/0001-greetings/04-reusing.toml",
+    );
+    let files = [
+        (first, RETIRING),
+        (again, RETIRING_AGAIN),
+        (reusing, REUSING),
+    ];
+    assert_eq!(retired_008(&files), [reuse(reusing, first, 1)]);
+}
+
 #[test]
 fn a_supersedes_relation_targets_an_identifier_a_section_file_retires() {
     let mut files = CLEAN.to_vec();
