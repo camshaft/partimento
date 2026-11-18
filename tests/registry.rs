@@ -201,6 +201,41 @@ fn a_defined_by_that_a_section_file_retires_says_where_it_is_retired() {
 }
 
 #[test]
+fn a_defined_by_retired_in_two_files_says_its_first_listing() {
+    // rfc.toml retires EX-0001-008 at its line 5, beside EX-0001-003, and the section file
+    // retires it again at its line 2, after a comment line. The registry's entry `h` holds it as
+    // its defined_by at line 15, and the finding cites rfc.toml's line, the first listing.
+    const RFC: &str = "rfcs/0001-greetings/rfc.toml";
+    let base = include_str!("fixtures/46-registry/rfcs/0001-greetings/rfc.toml");
+    let meta = base.replacen("\"]", "\", \"EX-0001-008\"]", 1);
+    assert_ne!(meta, base, "rfc.toml's retired list ends at line 5");
+    let section =
+        format!("# An identifier the section retires.\nretired = [\"EX-0001-008\"]\n\n{GREETING}");
+    let registry = ENTRIES.replacen("\"EX-0001-002\"", "\"EX-0001-008\"", 1);
+    assert_ne!(registry, ENTRIES, "entry `h` holds EX-0001-002");
+    let mut tree = Tree::default();
+    for &(path, text) in FILES {
+        let text = match path {
+            RFC => meta.as_str(),
+            SECTION => section.as_str(),
+            REGISTRY => registry.as_str(),
+            _ => text,
+        };
+        tree.files
+            .insert(path.to_string(), ByteVec::from(text.to_string()));
+    }
+    let generated = partimento::render(&tree).expect("the tree renders");
+    tree.files.extend(generated.files);
+    let report = check(&tree);
+    let expected = format!(
+        "error[registry] {REGISTRY}:15: defined_by is `EX-0001-008`, which is retired at \
+         {RFC}:5\n"
+    );
+    assert_eq!(lines(&report.findings), expected);
+    assert!(report.failed());
+}
+
+#[test]
 fn a_missing_registry_fails_at_its_path_and_at_each_format_of_the_kind_table() {
     let mut tree = fixture();
     tree.files.remove(REGISTRY);

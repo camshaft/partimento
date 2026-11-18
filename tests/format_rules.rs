@@ -360,6 +360,37 @@ fn an_implies_relation_to_an_identifier_a_section_file_retires_says_where_it_is_
     assert_eq!(found, [&expected]);
 }
 
+#[test]
+fn an_implies_relation_to_an_identifier_retired_in_two_files_says_its_first_listing() {
+    // rfc.toml retires EX-0001-008 at line 5, 02-retiring.toml retires it again at line 1, and
+    // 03-implying.toml implies it at line 14. The later rfc.toml of `files` takes the place of
+    // CLEAN's, and the finding cites its line, the first listing.
+    let meta = CLEAN_META.replace("retired = []", "retired = [\"EX-0001-008\"]");
+    assert_ne!(meta, CLEAN_META, "CLEAN_META's line 5 retires nothing");
+    let (rfc, retiring, implying) = (
+        "rfcs/0001-greetings/rfc.toml",
+        "rfcs/0001-greetings/02-retiring.toml",
+        "rfcs/0001-greetings/03-implying.toml",
+    );
+    let mut files = CLEAN.to_vec();
+    files.extend([
+        (rfc, meta.as_str()),
+        (retiring, RETIRING),
+        (implying, IMPLYING),
+    ]);
+    let report = check(&files);
+    assert!(report.failed());
+    let target = partimento::checks::RELATION_TARGET;
+    let found: Vec<&Finding> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.rule == target)
+        .collect();
+    let message = format!("the relation's target `EX-0001-008` is retired at {rfc}:5");
+    let expected = Finding::error(target, implying, 14, Some("EX-0001-002"), message);
+    assert_eq!(found, [&expected]);
+}
+
 #[cfg(feature = "cli")]
 mod binary {
     use std::path::{Path, PathBuf};
