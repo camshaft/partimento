@@ -1,10 +1,11 @@
 //! The registry of identifier kinds, through fixture 46-registry, whose spec.toml sets
 //! `paths.registry` and whose section file names the kind `a greeting`, with formats 1 and 2, in
 //! a kind table: the check of the fixture with its registry, with a registry of comment lines
-//! alone, without the file, with a registry whose entries each break one rule, with a registry
-//! that doesn't parse, with one that isn't UTF-8, and without `paths.registry`; the checks of
-//! `paths.registry` in spec.toml; and the diff of a change that removes or alters an entry, of
-//! one that only adds, and of a head whose registry isn't UTF-8 or doesn't parse.
+//! alone, without the file, with a registry whose entries each break one rule, with an entry
+//! whose defined_by a section file retires, with a registry that doesn't parse, with one that
+//! isn't UTF-8, and without `paths.registry`; the checks of `paths.registry` in spec.toml; and
+//! the diff of a change that removes or alters an entry, of one that only adds, and of a head
+//! whose registry isn't UTF-8 or doesn't parse.
 //!
 //! The library's tests build each tree in memory from files embedded at compile time, so they
 //! read no file and run on wasm32 too.
@@ -168,6 +169,35 @@ fn each_broken_entry_fails_at_its_line() {
         assert_eq!(finding.rule, registry::RULE, "{finding}");
         assert!(finding.requirement.is_none(), "{finding}");
     }
+}
+
+#[test]
+fn a_defined_by_that_a_section_file_retires_says_where_it_is_retired() {
+    // The section file retires EX-0001-004 at its line 2, after a comment line, and the
+    // registry's entry `h` holds it as its defined_by at line 15.
+    let section =
+        format!("# An identifier the section retires.\nretired = [\"EX-0001-004\"]\n\n{GREETING}");
+    let registry = ENTRIES.replacen("\"EX-0001-002\"", "\"EX-0001-004\"", 1);
+    assert_ne!(registry, ENTRIES, "entry `h` holds EX-0001-002");
+    let mut tree = Tree::default();
+    for &(path, text) in FILES {
+        let text = match path {
+            SECTION => section.as_str(),
+            REGISTRY => registry.as_str(),
+            _ => text,
+        };
+        tree.files
+            .insert(path.to_string(), ByteVec::from(text.to_string()));
+    }
+    let generated = partimento::render(&tree).expect("the tree renders");
+    tree.files.extend(generated.files);
+    let report = check(&tree);
+    let expected = format!(
+        "error[registry] {REGISTRY}:15: defined_by is `EX-0001-004`, which is retired at \
+         {SECTION}:2\n"
+    );
+    assert_eq!(lines(&report.findings), expected);
+    assert!(report.failed());
 }
 
 #[test]
