@@ -15,7 +15,8 @@ use crate::Finding;
 pub const IDENTIFIER_FORM: &str = "identifier-form";
 /// An identifier that two requirements hold.
 pub const IDENTIFIER_UNIQUE: &str = "identifier-unique";
-/// A retired identifier that a requirement holds, or that another RFC than its own retires.
+/// A retired identifier that a requirement holds. An RFC may retire an identifier of any RFC's
+/// number, such as that of a requirement that moved into it from another RFC.
 pub const IDENTIFIER_RETIRED: &str = "identifier-retired";
 /// A statement whose key words don't match its `level` and `polarity`.
 pub const KEY_WORD: &str = "key-word";
@@ -135,14 +136,10 @@ pub fn check(config: &Config, set: &Set, findings: &mut Vec<Finding>) {
                 file,
                 requirement: Some(id.value.as_str()),
             };
-            match parse_identifier(&config.prefix, &id.value) {
-                None => place.error(IDENTIFIER_FORM, id.line, form(&config.prefix)),
-                Some((number, _)) if number != rfc.number => {
-                    let held = rfc.number;
-                    let message = format!("RFC {held} retires an identifier of RFC {number}");
-                    place.error(IDENTIFIER_RETIRED, id.line, message);
-                }
-                Some(_) => {}
+            // An RFC may retire an identifier of any RFC's number, such as that of a requirement
+            // that moved into it; a requirement that holds a retired identifier still fails.
+            if parse_identifier(&config.prefix, &id.value).is_none() {
+                place.error(IDENTIFIER_FORM, id.line, form(&config.prefix));
             }
             cx.retired
                 .entry(id.value.as_str())
