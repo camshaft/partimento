@@ -125,9 +125,10 @@ retired = []
 ```
 
 `rfc.toml` and the index agree on the RFC's title and area. `retired` lists the identifiers the
-RFC no longer holds, which no requirement uses again. A contract RFC, one whose number is in the
-`[contracts]` range, also holds `contract_version`, a whole number from 1 that its writers raise
-with each change of the contract; an RFC of another group doesn't hold it.
+RFC no longer holds, which no requirement uses again, an identifier of any RFC's number among
+them, such as that of a requirement that moved into the RFC from another. A contract RFC, one
+whose number is in the `[contracts]` range, also holds `contract_version`, a whole number from 1
+that its writers raise with each change of the contract; an RFC of another group doesn't hold it.
 
 Beside `rfc.toml`, the directory holds one file for each section, `<nn>-<slug>.toml`:
 

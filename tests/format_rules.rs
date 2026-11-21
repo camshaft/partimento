@@ -10,8 +10,8 @@ use partimento::{ByteVec, Finding, Options, Report, Tree};
 
 const SPEC: &str = include_str!("fixtures/format-rules/spec.toml");
 const INDEX: &str = include_str!("fixtures/format-rules/rfcs/index.toml");
-/// An rfc.toml that retires `EX-0001-003` at line 6, an identifier of RFC 2 at line 7, and
-/// `EX-9`, which isn't of the identifier's form, at line 8.
+/// An rfc.toml that retires `EX-0001-003` at line 6, `EX-0002-001`, an identifier of RFC 2 that
+/// an RFC may retire, at line 7, and `EX-9`, which isn't of the identifier's form, at line 8.
 const META: &str = include_str!("fixtures/format-rules/rfcs/0001-greetings/rfc.toml");
 const GREETING: &str = include_str!("fixtures/format-rules/rfcs/0001-greetings/01-greeting.toml");
 /// A section file whose `prose` and four requirement blocks each break one format rule.
@@ -207,14 +207,13 @@ fn each_identifier_and_field_finding_is_at_its_place() {
     assert_eq!(lines(&report), EXPECTED);
     assert!(report.failed());
     let (meta, broken) = (FILES[2].0, FILES[4].0);
-    let expected: [Place; 8] = [
+    let expected: [Place; 7] = [
         ("field-value", broken, 6, None),
         ("identifier-form", broken, 11, Some("EX-1-1")),
         ("identifier-retired", broken, 19, Some("EX-0001-003")),
         ("field-missing", broken, 24, Some("EX-0001-004")),
         ("field-value", broken, 35, Some("EX-0001-005")),
         ("field-value", broken, 38, Some("EX-0001-005")),
-        ("identifier-retired", meta, 7, Some("EX-0002-001")),
         ("identifier-form", meta, 8, Some("EX-9")),
     ];
     assert_eq!(places(&report), expected);
@@ -260,13 +259,78 @@ fn an_identifier_a_section_file_retires_is_refused_in_another_section_file() {
         .iter()
         .filter(|finding| finding.rule == retired)
         .collect();
-    let other_rfc = "RFC 1 retires an identifier of RFC 2";
     let reused = format!("the identifier is retired at {retiring}:1");
-    let expected = [
-        Finding::error(retired, retiring, 1, Some("EX-0002-001"), other_rfc),
-        Finding::error(retired, reusing, 10, Some("EX-0001-008"), reused),
-    ];
-    assert_eq!(found, expected.iter().collect::<Vec<_>>());
+    let expected = Finding::error(retired, reusing, 10, Some("EX-0001-008"), reused);
+    assert_eq!(found, [&expected]);
+}
+
+/// The findings of the rule identifier-retired in the check of `files`, in the report's order.
+fn retired_findings(files: &[(&str, &str)]) -> Vec<Finding> {
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    check(files)
+        .findings
+        .into_iter()
+        .filter(|finding| finding.rule == retired)
+        .collect()
+}
+
+/// RFC 2's row of the index, which follows RFC 1's.
+const FAREWELLS_ROW: &str = r#"[[rfc]]
+number = 2
+title = "Farewells"
+area = "core"
+"#;
+
+/// RFC 2's rfc.toml, which retires nothing.
+const FAREWELLS_META: &str = r#"number = 2
+title = "Farewells"
+area = "core"
+abstract = "How the program says goodbye when it stops."
+retired = []
+"#;
+
+#[test]
+fn a_section_file_may_retire_an_identifier_of_another_rfcs_number() {
+    // A requirement that moved into RFC 1 from RFC 2 keeps its identifier, and a section file
+    // of RFC 1 retires it: SUPERSEDING with RFC 2's `EX-0002-001` for `EX-0001-008`.
+    let moved = SUPERSEDING.replace("EX-0001-008", "EX-0002-001");
+    assert_ne!(moved, SUPERSEDING, "the identifier is RFC 2's");
+    let mut files = CLEAN.to_vec();
+    files.push(("rfcs/0001-greetings/02-farewell.toml", moved.as_str()));
+    let mut tree = tree(&files);
+    let generated = partimento::render(&tree).expect("the tree renders");
+    tree.files.extend(generated.files);
+    let report = partimento::check_default(&tree, &Options::default());
+    assert!(report.findings.is_empty(), "{}", lines(&report));
+    assert!(!report.failed());
+}
+
+#[test]
+fn a_requirement_that_holds_a_retired_identifier_of_another_rfcs_number_fails() {
+    let retired = partimento::rules::IDENTIFIER_RETIRED;
+    let retiring = "rfcs/0001-greetings/02-retiring.toml";
+    let message = format!("the identifier is retired at {retiring}:1");
+    // REUSING with `EX-0002-001`, which RETIRING, a section file of RFC 1, retires.
+    let holding = REUSING.replace("EX-0001-008", "EX-0002-001");
+    assert_ne!(holding, REUSING, "the identifier is RFC 2's");
+    // The requirement is in a section file of RFC 1, the RFC that retires the identifier.
+    let reusing = "rfcs/0001-greetings/03-reusing.toml";
+    let mut files = CLEAN.to_vec();
+    files.extend([(retiring, RETIRING), (reusing, holding.as_str())]);
+    let expected = Finding::error(retired, reusing, 10, Some("EX-0002-001"), message.clone());
+    assert_eq!(retired_findings(&files), [expected]);
+    // The requirement is in a section file of RFC 2, the RFC whose number the identifier holds.
+    let index = format!("{INDEX}\n{FAREWELLS_ROW}");
+    let farewell = "rfcs/0002-farewells/01-reusing.toml";
+    let mut files = CLEAN.to_vec();
+    files.extend([
+        ("rfcs/index.toml", index.as_str()),
+        ("rfcs/0002-farewells/rfc.toml", FAREWELLS_META),
+        (retiring, RETIRING),
+        (farewell, holding.as_str()),
+    ]);
+    let expected = Finding::error(retired, farewell, 10, Some("EX-0002-001"), message);
+    assert_eq!(retired_findings(&files), [expected]);
 }
 
 /// An rfc.toml that retires `EX-0001-008` at line 5.
